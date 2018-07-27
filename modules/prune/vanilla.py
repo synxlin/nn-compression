@@ -19,14 +19,14 @@ def prune_vanilla_elementwise(sparsity, param):
     num_pruned = int(math.ceil(num_el * sparsity))
     num_stayed = num_el - num_pruned
     if sparsity <= 0.5:
-        _, topk_indices = torch.topk(param_abs.view(num_el), num_pruned,
-                                     0, largest=False, sorted=False)
+        _, topk_indices = torch.topk(param_abs.view(num_el), k=num_pruned,
+                                     dim=0, largest=False, sorted=False)
         mask = torch.zeros_like(param).byte()
         param.view(num_el).index_fill_(0, topk_indices, 0)
         mask.view(num_el).index_fill_(0, topk_indices, 1)
     else:
-        thr = torch.min(torch.topk(param_abs.view(num_el), num_stayed,
-                                   0, largest=True, sorted=False)[0])
+        thr = torch.min(torch.topk(param_abs.view(num_el), k=num_stayed,
+                                   dim=0, largest=True, sorted=False)[0])
         mask = torch.lt(param_abs, thr)
         param.masked_fill_(mask, 0)
     return mask
@@ -48,8 +48,8 @@ def prune_vanilla_kernelwise(sparsity, param):
     param_k = param.view(num_kernels, -1)
     param_norm = param_k.norm(1, -1)  # L1-norm importance
     num_pruned = int(math.ceil(num_kernels * sparsity))
-    _, topk_indices = torch.topk(param_norm, num_pruned,
-                                 0, largest=False, sorted=False)
+    _, topk_indices = torch.topk(param_norm, k=num_pruned,
+                                 dim=0, largest=False, sorted=False)
     mask = torch.zeros_like(param).byte()
     mask_k = mask.view(num_kernels, -1)
     param_k.index_fill_(0, topk_indices, 0)
@@ -73,8 +73,8 @@ def prune_vanilla_filterwise(sparsity, param):
     param_k = param.view(num_filters, -1)
     param_norm = param_k.norm(1, -1)  # L1-norm importance
     num_pruned = int(math.ceil(num_filters * sparsity))
-    _, topk_indices = torch.topk(param_norm, num_pruned,
-                                 0, largest=False, sorted=False)
+    _, topk_indices = torch.topk(param_norm, k=num_pruned,
+                                 dim=0, largest=False, sorted=False)
     mask = torch.zeros_like(param).byte()
     mask_k = mask.view(num_filters, -1)
     param_k.index_fill_(0, topk_indices, 0)
@@ -83,14 +83,13 @@ def prune_vanilla_filterwise(sparsity, param):
 
 
 class VanillaPruner(object):
-    """
 
-    """
     def __init__(self, rule, granularity='element'):
         """
-
-        :param rule:
-        :param granularity:
+        Pruner Class for Vanilla Pruning Method
+        :param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
+                     list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...])]
+        :param granularity: str, pruning granularity, choose from 'element', 'kernel', 'filter'
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
@@ -115,9 +114,9 @@ class VanillaPruner(object):
 
     def load_state_dict(self, state_dict):
         """
-
-        :param state_dict:
-        :return:
+        Recover Pruner
+        :param state_dict: dict, a dictionary containing a whole state of the Pruner
+        :return: VanillaPruner
         """
         self.rule = state_dict['rule']
         self.granularity = state_dict['granularity']
@@ -127,21 +126,23 @@ class VanillaPruner(object):
 
     def state_dict(self):
         """
-
-        :return:
+        Returns a dictionary containing a whole state of the Pruner
+        :return: dict, a dictionary containing a whole state of the Pruner
         """
         state_dict = dict()
         state_dict['rule'] = self.rule
         state_dict['granularity'] = self.granularity
         state_dict['masks'] = self.masks
+        return state_dict
 
     def prune_param(self, param, param_name, stage=0):
         """
-
-        :param param:
-        :param param_name:
-        :param stage:
+        prune parameter
+        :param param: torch.(cuda.)tensor
+        :param param_name: str, name of param
+        :param stage: int, the pruning stage, default=0
         :return:
+            torch.(cuda.)ByteTensor, mask for zeros
         """
         rule_id = -1
         for idx, x in enumerate(self.rule):
@@ -162,11 +163,12 @@ class VanillaPruner(object):
 
     def prune(self, model, stage=0, update_masks=False):
         """
-
-        :param model:
-        :param stage:
-        :param update_masks:
+        prune models
+        :param model: torch.nn.Module
+        :param stage: int, the pruning stage, default=0
+        :param update_masks: bool, whether update masks
         :return:
+            void
         """
         update_masks = True if update_masks or len(self.masks) == 0 else False
         if update_masks:

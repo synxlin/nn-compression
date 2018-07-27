@@ -7,14 +7,19 @@ from .kmeans import quantize_k_means, quantize_k_means_fix_zeros
 
 
 # TODO: fixed point arg
-def quantize_vanilla(fix_zeros=True, method='k-means', guess=None, **options):
+def quantize(fix_zeros=True, method='k-means', guess=None, **options):
     """
-
-    :param fix_zeros:
-    :param method:
-    :param guess:
-    :param options:
+    returns quantization function based on the options
+    :param fix_zeros: bool, whether to fix zeros in the param
+    :param method: str, quantization method, choose from 'linear', 'k-means'
+    :param guess: str, initial quantization centroid generation method,
+                       choose from 'uniform', 'linear', 'random', 'k-means++'
+                  numpy.ndarray of shape (num_el, 1)
+    :param update_centers: bool, whether to update quantization centroids when using k-means
+    :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+    :param re_quantize: bool, whether to re-quantize the param when using k-means
     :return:
+        function, quantization function
     """
     assert method in ['linear', 'k-means']
     # check guess options
@@ -41,15 +46,14 @@ def quantize_vanilla(fix_zeros=True, method='k-means', guess=None, **options):
 
 
 # TODO: fixed point arg
-class VanillaQuantizer(object):
-    """
+class Quantizer(object):
 
-    """
     def __init__(self, rule, fix_zeros=True):
         """
-
-        :param rule:
-        :param fix_zeros:
+        Quantizer class for quantization
+        :param rule: str, path to the rule file, each line formats 'param_name quantization_bit_length initial_guess'
+                     list of tuple, [(param_name(str), quantization_bit_length(int), initial_guess(str))]
+        :param fix_zeros: whether to fix zeros when quantizing
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
@@ -60,15 +64,16 @@ class VanillaQuantizer(object):
 
         self.codebooks = dict()
         self.fix_zeros = fix_zeros
-        self.quantize = quantize_vanilla
+        self.quantize = quantize
 
         print("Initializing Vanilla Quantizer\nRules:\n{}".format(self.rule))
 
     def load_state_dict(self, state_dict):
         """
-
-        :param state_dict:
+        Recover Quantizer
+        :param state_dict: dict, a dictionary containing a whole state of the Quantizer
         :return:
+            Quantizer
         """
         self.rule = state_dict['rule']
         self.fix_zeros = state_dict['fix_zeros']
@@ -84,8 +89,8 @@ class VanillaQuantizer(object):
 
     def state_dict(self):
         """
-
-        :return:
+        Returns a dictionary containing a whole state of the Quantizer
+        :return: dict, a dictionary containing a whole state of the Quantizer
         """
         state_dict = dict()
         state_dict['rule'] = self.rule
@@ -105,11 +110,15 @@ class VanillaQuantizer(object):
 
     def quantize_param(self, param, param_name, **quantize_options):
         """
-
-        :param param:
-        :param param_name:
-        :param quantize_options:
+        quantize param
+        :param param: torch.(cuda.)tensor
+        :param param_name: str, name of param
+        :param update_centers: bool, whether to update quantization centroids when using k-means
+        :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+        :param re_quantize: bool, whether to re-quantize the param when using k-means
         :return:
+            dict, {'centers_': torch.tensor}, codebook of linear quantization
+            sklearn.cluster.KMeans, codebook of k-means quantization
         """
         rule_id = -1
         for idx, x in enumerate(self.rule):
@@ -133,12 +142,13 @@ class VanillaQuantizer(object):
 
     def quantize_model(self, model, update_centers=False, update_labels=False, re_quantize=False):
         """
-
-        :param model:
-        :param update_centers:
-        :param update_labels:
-        :param re_quantize:
+        quantize model
+        :param model: torch.nn.module
+        :param update_centers: bool, whether to update quantization centroids when using k-means
+        :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+        :param re_quantize: bool, whether to re-quantize the param when using k-means
         :return:
+            void
         """
         for param_name, param in model.named_parameters():
             if param.dim() > 1:

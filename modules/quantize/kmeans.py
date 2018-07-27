@@ -7,15 +7,18 @@ import torch
 def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=False,
                      update_labels=False, re_quantize=False):
     """
-
+    quantize using k-means clustering
     :param param:
-    :param codebook:
-    :param k:
-    :param guess:
-    :param update_centers:
-    :param update_labels:
-    :param re_quantize:
+    :param codebook: sklearn.cluster.KMeans, codebook of quantization, default=None
+    :param k: int, the number of quantization level, default=16
+    :param guess: str, initial quantization centroid generation method,
+                       choose from 'uniform', 'linear', 'random', 'k-means++'
+                  numpy.ndarray of shape (num_el, 1)
+    :param update_centers: bool, whether to update quantization centroids
+    :param update_labels: bool, whether to re-allocate the param elements to the latest centroids
+    :param re_quantize: bool, whether to re-quantize the param
     :return:
+        sklearn.cluster.KMeans, codebook of quantization
     """
     param_shape = param.size()
     num_el = param.numel()
@@ -37,7 +40,7 @@ def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=Fals
         if param.is_cuda:
             codebook.cluster_centers_ = codebook.cluster_centers_.cuda(param.device)
 
-    if update_centers or update_labels:
+    elif update_centers or update_labels:
         if update_labels:
             sorted_centers, indices = torch.sort(codebook.cluster_centers, dim=0)
             boundaries = (sorted_centers[1:] + sorted_centers[:-1]) / 2
@@ -60,15 +63,18 @@ def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=Fals
 def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess=None, update_centers=False,
                                update_labels=False, re_quantize=False):
     """
-
+    quantize using k-means clustering while fixing the zeros
     :param param:
-    :param codebook:
-    :param k:
-    :param guess:
-    :param update_centers:
-    :param update_labels:
-    :param re_quantize:
+    :param codebook: sklearn.cluster.KMeans, codebook of quantization, default=None
+    :param k: int, the number of quantization level, default=16
+    :param guess: str, initial quantization centroid generation method,
+                       choose from 'uniform', 'linear', 'random', 'k-means++'
+                  numpy.ndarray of shape (num_el, 1)
+    :param update_centers: bool, whether to update quantization centroids
+    :param update_labels: bool, whether to re-allocate the param elements to the latest centroids
+    :param re_quantize: bool, whether to re-quantize the param
     :return:
+        sklearn.cluster.KMeans, codebook of quantization
     """
     param_shape = param.size()
     num_el = param.numel()
@@ -104,7 +110,7 @@ def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess=None, update_ce
         # labels_ = torch.from_numpy(codebook.labels_).long().cuda().add_(1)
         # codebook.labels_ = labels_.new(num_el).zero_().index_copy_(0, nonzero_indices, labels_)
 
-    if update_centers or update_labels:
+    elif update_centers or update_labels:
         if update_labels:
             sorted_centers, indices = torch.sort(codebook.cluster_centers_, dim=0)
             boundaries = (sorted_centers[1:] + sorted_centers[:-1]) / 2

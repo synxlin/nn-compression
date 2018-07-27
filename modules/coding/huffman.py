@@ -27,15 +27,13 @@ def get_huffman_codebook(symb2freq):
 
 # TODO: fixed point arg
 class HuffmanParam(object):
-    """
 
-    """
     def __init__(self, param=None, is_encode_indices=False, max_bit_length_zero_run_length=4):
         """
-
-        :param param:
-        :param is_encode_indices:
-        :param max_bit_length_zero_run_length:
+        HuffmanParam class
+        :param param: torch.(cuda.)tensor, default=None
+        :param is_encode_indices: bool, whether to encode zero run length, default=False
+        :param max_bit_length_zero_run_length: int, max bit length of zero run length
         """
         if max_bit_length_zero_run_length <= 0:
             is_encode_indices = False
@@ -89,8 +87,9 @@ class HuffmanParam(object):
     @property
     def bit_length(self):
         """
-
+        bit length after encoding
         :return:
+            int, bit length after encoding
         """
         if self.is_encode_indices:
             return 32 * len(self.codebook) + sum(map(lambda v: len(v), self.codebook.values())) + \
@@ -102,8 +101,9 @@ class HuffmanParam(object):
     @property
     def stats(self):
         """
-
+        stats of encoding
         :return:
+            dict, containing info of bit length of codebook/param/index, compression ratio, num_el and shape
         """
         stats = dict()
         stats['bit_length']['codebook'] = 32 * len(self.codebook) + \
@@ -123,8 +123,8 @@ class HuffmanParam(object):
     @property
     def data(self):
         """
-
-        :return:
+        returns decoded param
+        :return: torch.tensor, param
         """
         if self.is_encode_indices:
             param_nz_list = self.bit_stream['param'].decode(self.codebook)
@@ -147,8 +147,8 @@ class HuffmanParam(object):
 
     def state_dict(self):
         """
-
-        :return:
+        Returns a dictionary containing a whole state of the HuffmanParam
+        :return: dict, a dictionary containing a whole state of the HuffmanParam
         """
         state_dict = dict()
         state_dict['is_encode_indices'] = self.is_encode_indices
@@ -161,9 +161,9 @@ class HuffmanParam(object):
 
     def load_state_dict(self, state_dict):
         """
-
-        :param state_dict:
-        :return:
+        Recover HuffmanParam
+        :param state_dict: dict, a dictionary containing a whole state of the HuffmanParam
+        :return: HuffmanParam
         """
         for k, v in state_dict.items():
             self.__setattr__(k, v)
@@ -171,7 +171,5 @@ class HuffmanParam(object):
 
 
 class HuffmanCodec(object):
-    """
 
-    """
-    
+    def __init__(self):
