@@ -123,6 +123,7 @@ class VanillaPruner(object):
         self.granularity = state_dict['granularity']
         self.masks = state_dict['masks']
         print("Customizing Vanilla Pruner\nRules:\n{}".format(self.rule))
+        return self
 
     def state_dict(self):
         """
@@ -170,7 +171,7 @@ class VanillaPruner(object):
         update_masks = True if update_masks or len(self.masks) == 0 else False
         if update_masks:
             print("------ updating masks ------")
-        for idx, (param_name, param) in enumerate(model.named_parameters()):
+        for param_name, param in model.named_parameters():
             if param.dim() > 1:
                 if update_masks:
                     mask = self.prune_param(param=param, param_name=param_name, stage=stage)
