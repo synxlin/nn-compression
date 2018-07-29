@@ -42,14 +42,14 @@ class EncodedParam(object):
 
     def __init__(self, param=None, method='huffman',
                  bit_length=8, bit_length_integer=1,
-                 is_encode_indices=False, bit_length_zero_run_length=4):
+                 encode_indices=False, bit_length_zero_run_length=4):
         """
         EncodedParam class
         :param param: torch.(cuda.)tensor, default=None
         :param method: str, coding method, choose from ['vanilla', 'fixed_point', 'huffman']
         :param bit_length: int, bit length of fixed point param
         :param bit_length_integer: int, bit length of integer part of fixed point param
-        :param is_encode_indices: bool, whether to encode zero run length, default=False
+        :param encode_indices: bool, whether to encode zero run length, default=False
         :param bit_length_zero_run_length: int, bit length of zero run length
         """
         assert method in ['vanilla', 'fixed_point', 'huffman']
@@ -64,10 +64,10 @@ class EncodedParam(object):
         self.bit_length = bit_length
         self.bit_length_integer = bit_length_integer
         if bit_length_zero_run_length <= 0:
-            is_encode_indices = False
+            encode_indices = False
             bit_length_zero_run_length = 0
         self.max_bit_length_zero_run_length = bit_length_zero_run_length
-        self.is_encode_indices = is_encode_indices
+        self.encode_indices = encode_indices
         self.max_zero_run_length = max_zero_run_length = 2 ** bit_length_zero_run_length - 2
 
         assert torch.is_tensor(param)
@@ -78,7 +78,7 @@ class EncodedParam(object):
         self.codebook = None
 
         if torch.is_tensor(param):
-            if is_encode_indices:
+            if encode_indices:
                 param = param.view(num_el)
                 nonzero_indices = param.nonzero()
                 self.num_nz = nonzero_indices.numel()
@@ -186,7 +186,7 @@ class EncodedParam(object):
         else:
             param_list = self.bit_stream['param'].decode(self.codebook)
 
-        if self.is_encode_indices:
+        if self.encode_indices:
             param_nz_list = param_list
             bit_stream = self.bit_stream['index'].to01()
             param_list = []
@@ -213,7 +213,7 @@ class EncodedParam(object):
         state_dict['method'] = self.method
         state_dict['bit_length'] = self.bit_length
         state_dict['bit_length_integer'] = self.bit_length_integer
-        state_dict['is_encode_indices'] = self.is_encode_indices
+        state_dict['encode_indices'] = self.encode_indices
         state_dict['max_bit_length_zero_run_length'] = self.max_bit_length_zero_run_length
         state_dict['max_zero_run_length'] = self.max_zero_run_length
         state_dict['num_el'] = self.num_el

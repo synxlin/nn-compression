@@ -113,7 +113,7 @@ class VanillaPruner(object):
         print("=" * 89)
         print("Initializing Vanilla Pruner\n"
               "Rules:\n"
-              "{}".format(self.rule))
+              "{rule}".format(rule=self.rule))
         print("=" * 89)
 
     def load_state_dict(self, state_dict):
@@ -125,7 +125,11 @@ class VanillaPruner(object):
         self.rule = state_dict['rule']
         self.granularity = state_dict['granularity']
         self.masks = state_dict['masks']
-        print("Customizing Vanilla Pruner\nRules:\n{}".format(self.rule))
+        print("=" * 89)
+        print("Customizing Vanilla Pruner\n"
+              "Rules:\n"
+              "{rule}".format(rule=self.rule))
+        print("=" * 89)
         return self
 
     def state_dict(self):
@@ -160,18 +164,21 @@ class VanillaPruner(object):
             stage = min(max(0, stage), max_num_stage)
             sparsity = self.rule[rule_id][1][stage]
             if verbose:
-                print("{}:\t\tstage: {}\t\tsparsity: {.3f}".format(param_name, stage, sparsity))
+                print("{param_name:^30}:\t\t"
+                      "stage: {stage:02d}\t\t"
+                      "sparsity: {spars:.3f}"
+                      .format(param_name=param_name, stage=stage, spars=sparsity))
             mask = self.prune(sparsity=sparsity, param=param)
             return mask
         else:
             if verbose:
-                print("{}:\t\tskipping".format(param_name))
+                print("{param_name:^30}:\t\tskipping".format(param_name=param_name))
             return None
 
-    def prune(self, network, stage=0, update_masks=False, verbose=False):
+    def prune(self, model, stage=0, update_masks=False, verbose=False):
         """
         prune models
-        :param network: torch.nn.Module
+        :param model: torch.nn.Module
         :param stage: int, the pruning stage, default=0
         :param update_masks: bool, whether update masks
         :param verbose: bool, whether to print the pruning details
@@ -183,7 +190,7 @@ class VanillaPruner(object):
             print("=" * 89)
             print("updating masks")
             print("=" * 89)
-        for param_name, param in network.named_parameters():
+        for param_name, param in model.named_parameters():
             if param.dim() > 1:
                 if update_masks:
                     mask = self.prune_param(param=param.data, param_name=param_name, stage=stage, verbose=verbose)
@@ -193,3 +200,5 @@ class VanillaPruner(object):
                     if param_name in self.masks:
                         mask = self.masks[param_name]
                         param.masked_fill_(mask, 0)
+        if update_masks and verbose:
+            print("=" * 89)

@@ -1,3 +1,5 @@
+import os
+
 def get_sparsity(param):
     """
 
@@ -34,6 +36,47 @@ class AverageMeter(object):
         self.count += n
         if self.count > 0:
             self.avg = self.sum / self.count
+
+
+class Logger(object):
+    def __init__(self, file_path):
+        """
+        write log to file
+        :param file_path: str, path to the file
+        """
+        self.f = open(file_path, 'w')
+        self.fid = self.f.fileno()
+        self.filepath = file_path
+
+    def close(self):
+        """
+        close log file
+        :return:
+        """
+        return self.f.close()
+
+    def flush(self):
+        self.f.flush()
+        os.fsync(self.fid)
+
+    def write(self, content, wrap=True, flush=False, verbose=False):
+        """
+        write file and flush buffer to the disk
+        :param content: str
+        :param wrap: bool, whether to add '\n' at the end of the content
+        :param flush: bool, whether to flush buffer to the disk, default=False
+        :param verbose: bool, whether to print the content, default=False
+        :return:
+            void
+        """
+        if verbose:
+            print(content)
+        if wrap:
+            content += "\n"
+        self.f.write(content)
+        if flush:
+            self.f.flush()
+            os.fsync(self.fid)
 
 
 class StageScheduler(object):

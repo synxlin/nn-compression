@@ -67,9 +67,9 @@ class Quantizer(object):
         self.quantize = quantize
 
         print("=" * 89)
-        print("Initializing Vanilla Quantizer\n"
+        print("Initializing Quantizer\n"
               "Rules:\n"
-              "{}".format(self.rule))
+              "{rule}".format(rule=self.rule))
         print("=" * 89)
 
     def load_state_dict(self, state_dict):
@@ -89,6 +89,11 @@ class Quantizer(object):
                 self.codebooks[name].labels_ = codebook['labels']
             else:
                 self.codebooks[name] = codebook
+        print("=" * 89)
+        print("Customizing Quantizer\n"
+              "Rules:\n"
+              "{rule}".format(rule=self.rule))
+        print("=" * 89)
         return self
 
     def state_dict(self):
@@ -137,20 +142,22 @@ class Quantizer(object):
             guess = self.rule[rule_id][3]
             codebook = self.codebooks.get(param_name)
             if codebook is None and verbose:
-                print('{}:\t\tquantize level: {}'.format(param_name, k))
+                print("{param_name:^30}:\t\t"
+                      "quantize level: {k:02d}".format(param_name=param_name, k=k))
             codebook = self.quantize(fix_zeros=self.fix_zeros, method=method, guess=guess,
                                      param=param, codebook=codebook, k=k,
                                      **quantize_options)
             return codebook
         else:
             if verbose:
-                print('{}:\t\tskipping'.format(param_name))
+                print("{param_name:^30}:\t\t"
+                      "skipping".format(param_name=param_name))
             return None
 
-    def quantize_model(self, network, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
+    def quantize_model(self, model, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
         """
         quantize model
-        :param network: torch.nn.module
+        :param model: torch.nn.module
         :param update_centers: bool, whether to update quantization centroids when using k-means
         :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
         :param re_quantize: bool, whether to re-quantize the param when using k-means
@@ -158,10 +165,16 @@ class Quantizer(object):
         :return:
             void
         """
-        for param_name, param in network.named_parameters():
+        if verbose:
+            print("=" * 89)
+            print("quantizing model")
+            print("=" * 89)
+        for param_name, param in model.named_parameters():
             if param.dim() > 1:
                 codebook = self.quantize_param(param.data, param_name, update_centers=update_centers,
                                                update_labels=update_labels, re_quantize=re_quantize,
                                                verbose=verbose)
                 if codebook is not None:
                     self.codebooks[param_name] = codebook
+        if verbose:
+            print("=" * 89)

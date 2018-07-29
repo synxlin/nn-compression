@@ -40,10 +40,15 @@ class Codec(object):
         print("=" * 89)
         print("Initializing Huffman Codec\n"
               "Rules\n"
-              "{}".format(self.rule))
+              "{rule}".format(rule=self.rule))
         print("=" * 89)
 
     def reset_stats(self):
+        """
+        reset stats of codec
+        :return:
+            void
+        """
         self.stats['detail'] = dict()
         for _, v in self.stats['compression_ratio'].items():
             v.reset()
@@ -52,10 +57,11 @@ class Codec(object):
 
     def encode_param(self, param, param_name):
         """
-
-        :param param:
-        :param param_name:
+        encode the parameters based on rule
+        :param param: torch.(cuda.)tensor, parameter
+        :param param_name: str, name of parameter
         :return:
+            EncodedParam, encoded parameter
         """
         rule_id = -1
         for idx, x in enumerate(self.rule):
@@ -67,14 +73,19 @@ class Codec(object):
             rule = self.rule[rule_id]
             encoded_param = EncodedParam(param, method=rule[1],
                                          bit_length=rule[2], bit_length_integer=rule[3],
-                                         is_encode_indices=True, bit_length_zero_run_length=rule[4])
+                                         encode_indices=True, bit_length_zero_run_length=rule[4])
             return encoded_param
         else:
-
             return None
 
-    def encode(self, network):
-        assert isinstance(network, torch.nn.Module)
+    def encode(self, model):
+        """
+        encode network based on rule
+        :param model: torch.(cuda.)module, network model
+        :return:
+            EncodedModule, encoded model
+        """
+        assert isinstance(model, torch.nn.Module)
         self.reset_stats()
         encoded_params = dict()
         print("=" * 89)
@@ -83,7 +94,7 @@ class Codec(object):
         print("{:^30} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25}".
               format('Param Name', 'Param Density', 'Param Bit', 'Index Bit', 'Param Mem',
                      'Index Mem', 'Codebook Mem', 'Compression Ratio'))
-        for param_name, param in network.named_parameters():
+        for param_name, param in model.named_parameters():
             if 'AuxLogits' in param_name:
                 # deal with googlenet
                 continue
@@ -92,11 +103,13 @@ class Codec(object):
                 # check encoded result
                 assert torch.equal(param.data, encoded_param.data)
                 stats = encoded_param.stats
-                print("{:^30} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25} | {:<25}".
-                      format(param_name, stats['num_nz'] / stats['num_el'],
-                             stats['bit_length']['param'], stats['bit_length']['index'],
-                             stats['memory_size']['param'], stats['memory_size']['index'],
-                             stats['memory_size']['codebook'], stats['compression_ratio']))
+                print("{param_name:^30} | {density:<25} | {bit_param:<25} | {bit_index:<25} | "
+                      "{mem_param:<25} | {mem_index:<25} | {mem_codebook:<25} | {compression_ratio:<25}"
+                      .format(param_name=param_name, density=stats['num_nz'] / stats['num_el'],
+                              bit_param=stats['bit_length']['param'], bit_index=stats['bit_length']['index'],
+                              mem_param=stats['memory_size']['param'], mem_index=stats['memory_size']['index'],
+                              mem_codebook=stats['memory_size']['codebook'],
+                              compression_ratio=stats['compression_ratio']))
                 encoded_params[param_name] = encoded_param.state_dict()
                 # statistics
                 self.stats['compression_ratio']['compressed'].accumulate(stats['memory_size']['total'],
@@ -121,24 +134,33 @@ class Codec(object):
               "Codebook Memory Size         | {}\n"
               "Compressed Param Memory Size | {}\n"
               "Index Memory Size            | {}\n"
-              "Overall Param Memory Size    | {}".format(
-            self.stats['compression_ratio']['compressed'].avg, self.stats['compression_ratio']['total'].avg,
-            self.stats['memory_size']['codebook'].sum, self.stats['memory_size']['compressed_param'].sum,
-            self.stats['memory_size']['index'].sum, self.stats['memory_size']['param'].sum,
-        ))
+              "Overall Param Memory Size    | {}"
+              .format(self.stats['compression_ratio']['compressed'].avg,
+                      self.stats['compression_ratio']['total'].avg,
+                      self.stats['memory_size']['codebook'].sum,
+                      self.stats['memory_size']['compressed_param'].sum,
+                      self.stats['memory_size']['index'].sum,
+                      self.stats['memory_size']['param'].sum))
         print("=" * 89)
-        return EncodedModule(module=network, encoded_param=encoded_params)
+        return EncodedModule(module=model, encoded_param=encoded_params)
 
     @staticmethod
-    def decode(network, state_dict):
-        assert isinstance(network, torch.nn.Module)
+    def decode(model, state_dict):
+        """
+        decode the network using state dict from EncodedModule
+        :param model: torch.nn.module, network model
+        :param state_dict: state dict from EncodedModule
+        :return:
+            torch.nn.module, decoded network
+        """
+        assert isinstance(model, torch.nn.Module)
         print("=" * 89)
         print("Start Decoding")
-        for param_name, _ in network.named_parameters():
+        for param_name, _ in model.named_parameters():
             if param_name in state_dict:
                 print("Decoding {}".format(param_name))
                 state_dict[param_name] = state_dict[param_name].data
-        network = network.load_state_dict(state_dict)
+        model = model.load_state_dict(state_dict)
         print("Stop Decoding")
         print("=" * 89)
-        return network
+        return model
