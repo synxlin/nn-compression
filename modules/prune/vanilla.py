@@ -95,7 +95,7 @@ class VanillaPruner(object):
             content = map(lambda x: x.split(), open(rule).readlines())
             content = filter(lambda x: len(x) == 2, content)
             rule = list(map(lambda x: (x[0], list(map(float, x[1].split(',')))), content))
-        assert isinstance(rule, list)
+        assert isinstance(rule, list) or isinstance(rule, tuple)
         self.rule = rule
 
         if granularity == 'element':
@@ -110,7 +110,11 @@ class VanillaPruner(object):
 
         self.masks = dict()
 
-        print("Initializing Vanilla Pruner\nRules:\n{}".format(self.rule))
+        print("=" * 89)
+        print("Initializing Vanilla Pruner\n"
+              "Rules:\n"
+              "{}".format(self.rule))
+        print("=" * 89)
 
     def load_state_dict(self, state_dict):
         """
@@ -135,12 +139,13 @@ class VanillaPruner(object):
         state_dict['masks'] = self.masks
         return state_dict
 
-    def prune_param(self, param, param_name, stage=0):
+    def prune_param(self, param, param_name, stage=0, verbose=False):
         """
         prune parameter
         :param param: torch.(cuda.)tensor
         :param param_name: str, name of param
         :param stage: int, the pruning stage, default=0
+        :param verbose: bool, whether to print the pruning details
         :return:
             torch.(cuda.)ByteTensor, mask for zeros
         """
@@ -154,29 +159,34 @@ class VanillaPruner(object):
             max_num_stage = len(self.rule[rule_id][1]) - 1
             stage = min(max(0, stage), max_num_stage)
             sparsity = self.rule[rule_id][1][stage]
-            print("{}:\t\tstage: {}\t\tsparsity: {.3f}".format(param_name, stage, sparsity))
+            if verbose:
+                print("{}:\t\tstage: {}\t\tsparsity: {.3f}".format(param_name, stage, sparsity))
             mask = self.prune(sparsity=sparsity, param=param)
             return mask
         else:
-            print("{}:\t\tskipping".format(param_name))
+            if verbose:
+                print("{}:\t\tskipping".format(param_name))
             return None
 
-    def prune(self, model, stage=0, update_masks=False):
+    def prune(self, network, stage=0, update_masks=False, verbose=False):
         """
         prune models
-        :param model: torch.nn.Module
+        :param network: torch.nn.Module
         :param stage: int, the pruning stage, default=0
         :param update_masks: bool, whether update masks
+        :param verbose: bool, whether to print the pruning details
         :return:
             void
         """
         update_masks = True if update_masks or len(self.masks) == 0 else False
         if update_masks:
-            print("------ updating masks ------")
-        for param_name, param in model.named_parameters():
+            print("=" * 89)
+            print("updating masks")
+            print("=" * 89)
+        for param_name, param in network.named_parameters():
             if param.dim() > 1:
                 if update_masks:
-                    mask = self.prune_param(param=param, param_name=param_name, stage=stage)
+                    mask = self.prune_param(param=param.data, param_name=param_name, stage=stage, verbose=verbose)
                     if mask is not None:
                         self.masks[param_name] = mask
                 else:

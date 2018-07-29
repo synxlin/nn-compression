@@ -52,21 +52,25 @@ class Quantizer(object):
         """
         Quantizer class for quantization
         :param rule: str, path to the rule file, each line formats 'param_name quantization_bit_length initial_guess'
-                     list of tuple, [(param_name(str), quantization_bit_length(int), initial_guess(str))]
+                     list of tuple, [(param_name(str), quantization_bit_length(int), method(str), initial_guess(str))]
         :param fix_zeros: whether to fix zeros when quantizing
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
-            content = filter(lambda x: len(x) == 3, content)
-            rule = list(map(lambda x: (x[0], int(x[1]), x[2]), content))
-        assert isinstance(rule, list)
+            content = filter(lambda x: len(x) == 4, content)
+            rule = list(map(lambda x: (x[0], int(x[1]), x[2], x[3]), content))
+        assert isinstance(rule, list) or isinstance(rule, tuple)
         self.rule = rule
 
         self.codebooks = dict()
         self.fix_zeros = fix_zeros
         self.quantize = quantize
 
-        print("Initializing Vanilla Quantizer\nRules:\n{}".format(self.rule))
+        print("=" * 89)
+        print("Initializing Vanilla Quantizer\n"
+              "Rules:\n"
+              "{}".format(self.rule))
+        print("=" * 89)
 
     def load_state_dict(self, state_dict):
         """
@@ -108,7 +112,7 @@ class Quantizer(object):
         state_dict['codebooks'] = codebooks
         return state_dict
 
-    def quantize_param(self, param, param_name, **quantize_options):
+    def quantize_param(self, param, param_name, verbose=False, **quantize_options):
         """
         quantize param
         :param param: torch.(cuda.)tensor
@@ -116,6 +120,7 @@ class Quantizer(object):
         :param update_centers: bool, whether to update quantization centroids when using k-means
         :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
         :param re_quantize: bool, whether to re-quantize the param when using k-means
+        :param verbose: bool, whether to print quantize details
         :return:
             dict, {'centers_': torch.tensor}, codebook of linear quantization
             sklearn.cluster.KMeans, codebook of k-means quantization
@@ -128,31 +133,35 @@ class Quantizer(object):
                 break
         if rule_id > -1:
             k = self.rule[rule_id][1]
-            guess = self.rule[rule_id][2]
+            method = self.rule[rule_id][2]
+            guess = self.rule[rule_id][3]
             codebook = self.codebooks.get(param_name)
-            if codebook is None:
+            if codebook is None and verbose:
                 print('{}:\t\tquantize level: {}'.format(param_name, k))
-            codebook = self.quantize(fix_zeros=self.fix_zeros, guess=guess,
+            codebook = self.quantize(fix_zeros=self.fix_zeros, method=method, guess=guess,
                                      param=param, codebook=codebook, k=k,
                                      **quantize_options)
             return codebook
         else:
-            print('{}:\t\tskipping'.format(param_name))
+            if verbose:
+                print('{}:\t\tskipping'.format(param_name))
             return None
 
-    def quantize_model(self, model, update_centers=False, update_labels=False, re_quantize=False):
+    def quantize_model(self, network, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
         """
         quantize model
-        :param model: torch.nn.module
+        :param network: torch.nn.module
         :param update_centers: bool, whether to update quantization centroids when using k-means
         :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
         :param re_quantize: bool, whether to re-quantize the param when using k-means
+        :param verbose: bool, whether to print quantize details
         :return:
             void
         """
-        for param_name, param in model.named_parameters():
+        for param_name, param in network.named_parameters():
             if param.dim() > 1:
                 codebook = self.quantize_param(param.data, param_name, update_centers=update_centers,
-                                               update_labels=update_labels, re_quantize=re_quantize)
+                                               update_labels=update_labels, re_quantize=re_quantize,
+                                               verbose=verbose)
                 if codebook is not None:
                     self.codebooks[param_name] = codebook
