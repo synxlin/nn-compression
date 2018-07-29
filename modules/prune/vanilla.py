@@ -97,6 +97,7 @@ class VanillaPruner(object):
             rule = list(map(lambda x: (x[0], list(map(float, x[1].split(',')))), content))
         assert isinstance(rule, list) or isinstance(rule, tuple)
         self.rule = rule
+        self.max_num_stage = max(map(lambda x: len(x[1]), rule))
 
         if granularity == 'element':
             self.prune = prune_vanilla_elementwise
@@ -116,14 +117,17 @@ class VanillaPruner(object):
               "{rule}".format(rule=self.rule))
         print("=" * 89)
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict, keep_rule=False):
         """
         Recover Pruner
         :param state_dict: dict, a dictionary containing a whole state of the Pruner
+        :param keep_rule: bool, whether to keep rule and granularity settings
         :return: VanillaPruner
         """
-        self.rule = state_dict['rule']
-        self.granularity = state_dict['granularity']
+        if not keep_rule:
+            self.rule = state_dict['rule']
+            self.max_num_stage = max(map(lambda x: len(x[1]), self.rule))
+            self.granularity = state_dict['granularity']
         self.masks = state_dict['masks']
         print("=" * 89)
         print("Customizing Vanilla Pruner\n"

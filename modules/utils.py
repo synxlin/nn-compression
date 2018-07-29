@@ -80,9 +80,6 @@ class Logger(object):
 
 
 class StageScheduler(object):
-    """
-
-    """
 
     def __init__(self, max_num_stage, stage_step=45):
         """

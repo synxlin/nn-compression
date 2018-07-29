@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.parallel
-import torch.optim
 import torch.utils.data
 import torchvision.datasets as datasets
 import torchvision.models as models
@@ -34,20 +33,20 @@ parser.add_argument('-b', '--batch-size', default=256, type=int,
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--pretrained', dest='pretrained', default="",
-                    help='use pre-trained model')
+                    help='use pre-trained model (before nn.DataParallel)')
 parser.add_argument('--relatively', action='store_true',
                     help='relatively prune')
 
 
 def main():
-    global scan_logger, rule_logger
+    global scan_log, rule_log
     args = parser.parse_args()
 
     dir_name = args.arch + '_' + datetime.datetime.now().strftime('%m%d_%H%M')
     log_dir = os.path.join('logs', os.path.join('scan', dir_name))
     os.makedirs(log_dir)
-    scan_logger = Logger(os.path.join(log_dir, 'scan.log'))
-    rule_logger = Logger(os.path.join(log_dir, 'recommend.rule'))
+    scan_log = Logger(os.path.join(log_dir, 'scan.log'))
+    rule_log = Logger(os.path.join(log_dir, 'recommend.rule'))
 
     # create model
     print("=> creating model '{}'".format(args.arch))
@@ -107,6 +106,9 @@ def main():
     # sensitivity scan
     sensitivity_scan(model=model, val_loader=val_loader, relatively=args.relatively, top1=top1)
 
+    scan_log.close()
+    rule_log.close()
+
 
 def validate(val_loader, model, sparsity):
     top1 = AverageMeter()
@@ -139,10 +141,10 @@ def sensitivity_scan(model, val_loader, top1, relatively=False):
     for i, (param_name, param) in enumerate(model.named_parameters()):
         print("{:3d} -> {param_name:^30} -> {param_shape}"
               .format(i, param_name=param_name, param_shape=param.size()))
-        scan_logger.write(content="@Param: {param_name:^30}".format(param_name=param_name), wrap=True)
+        scan_log.write(content="@Param: {param_name:^30}".format(param_name=param_name), wrap=True)
         if param.dim() > 1:
-            p1s, p5s = 0, 0
-            scan_logger.write(content="------ scanning param ------", wrap=True, verbose=True)
+            p1s, p5s = 1.0, 1.0
+            scan_log.write(content="------ scanning param ------", wrap=True, verbose=True)
             param_clone = param.data.clone()
             origin_sparsity = get_sparsity(param=param_clone)
             for sparsity in np.arange(start=0.1, stop=1.0, step=0.1):
@@ -150,20 +152,21 @@ def sensitivity_scan(model, val_loader, top1, relatively=False):
                     sparsity *= origin_sparsity
                 prune_vanilla_elementwise(sparsity=sparsity, param=param.data)
                 top1, top5 = validate(val_loader=val_loader, model=model, sparsity=sparsity)
-                scan_logger.write(content="{spars:.3f}\t{top1:.3f}\t{top5:.5f}"
+                scan_log.write(content="{spars:.3f}\t{top1:.3f}\t{top5:.5f}"
                                   .format(spars=sparsity, top1=top1, top5=top5),
                                   wrap=True)
                 param.data.copy_(param_clone)
                 if top1 > c5:
-                    p5s = sparsity
+                    p5s = min(p5s, sparsity)
                     if top1 > c1:
-                        p1s = sparsity
-            scan_logger.flush()
-            rule_logger.write("{param_name} {stage_0:.5f},{stage_1:.5f}"
-                              .format(param_name=param_name, stage_0=p1s, stage_1=p5s),
-                              wrap=True, verbose=True, flush=True)
+                        p1s = min(p1s, sparsity)
+                        break
+            scan_log.flush()
+            rule_log.write("{param_name} {stage_0:.5f},{stage_1:.5f}"
+                           .format(param_name=param_name, stage_0=p1s, stage_1=p5s),
+                           wrap=True, verbose=True, flush=True)
         else:
-            scan_logger.write("------ skipping param ------", wrap=True, verbose=True, flush=True)
+            scan_log.write("------ skipping param ------", wrap=True, verbose=True, flush=True)
 
 
 def accuracy(output, target, topk=(1,)):
