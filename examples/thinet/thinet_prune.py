@@ -28,8 +28,8 @@ parser.add_argument('data', metavar='DIR',
 parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg16',
                     choices=model_names,
                     help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: vgg16)')
+                         ' | '.join(model_names) +
+                         ' (default: vgg16)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
