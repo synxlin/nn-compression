@@ -60,8 +60,9 @@ parser.add_argument('--print-freq', '-p', default=10, type=int,
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 parser.add_argument('--pretrained', dest='pretrained', default='',
-                    help='use pre-trained model (before nn.DataParallel)')
-parser.add_argument('--prune-rule', default='', help='path to prune rule file')
+                    help='use pre-trained model (after nn.DataParallel)')
+parser.add_argument('--prune-rule', default='',
+                    help='path to prune rule file')
 parser.add_argument('--prune-step', default='45', metavar='N1,N2,N3...',
                     help='after N1, N1+N2, ...  epochs update sparsities/masks')
 parser.add_argument('--nGPU', type=int, default=4,
@@ -81,23 +82,19 @@ def main():
     os.makedirs(checkpoint_dir)
     train_log = Logger(os.path.join(log_dir, 'train.log'))
     test_log = Logger(os.path.join(log_dir, 'test.log'))
+    config_log = Logger(os.path.join(log_dir, 'config.log'))
+
+    for k, v in vars(args).items():
+        config_log.write(content="{k} : {v}".format(k=k, v=v), wrap=True, flush=True)
+    config_log.close()
 
     # create model
     print("=" * 89)
     print("=> creating model '{}'".format(args.arch))
 
-    if args.pretrained:
-        if args.pretrained == 'True':
+    if args.pretrained == 'True':
             print("=> using pre-trained model from model zoo")
             model = models.__dict__[args.arch](pretrained=True)
-        else:
-            if args.arch.startswith('inception'):
-                model = models.__dict__[args.arch](transform_input=True)
-            else:
-                model = models.__dict__[args.arch]()
-            print("=> using pre-trained model '{}'".format(args.pretrained))
-            checkpoint = torch.load(args.pretrained)
-            model.load_state_dict(checkpoint['state_dict'])
     else:
         if args.arch.startswith('inception'):
             model = models.__dict__[args.arch](transform_input=True)
@@ -109,6 +106,11 @@ def main():
         model.cuda()
     else:
         model = torch.nn.DataParallel(model, device_ids=list(range(args.nGPU))).cuda()
+
+    if args.pretrained and args.pretrained != 'True':
+        print("=> using pre-trained model '{}'".format(args.pretrained))
+        checkpoint = torch.load(args.pretrained)
+        model.load_state_dict(checkpoint['state_dict'])
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
@@ -227,6 +229,7 @@ def main():
                 'pruner': pruner.state_dict(),
             }, is_best=False, filename='stage_{}.pth.tar'.format(stage_id),
                 checkpoint_dir=checkpoint_dir)
+
     train_log.close()
     test_log.close()
 
@@ -286,14 +289,14 @@ def train(train_loader, model, criterion, optimizer, pruner, epoch):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
     print("=" * 89)
-    print(' * train epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
+    print(' * Train Epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
           .format(epoch=epoch, top1=top1, top5=top5))
     print("=" * 89)
     train_log.write(content="{epoch}\t"
-                            "{top1:.4e}\t"
-                            "{top5:.4e}\t"
-                            "{loss:.4e}"
-                    .format(epoch=epoch, top1=top1.avg, top5=top5.avg, loss=losses.avg), wrap=True, flush=True)
+                            "{top1.avg:.4e}\t"
+                            "{top5.avg:.4e}\t"
+                            "{loss.avg:.4e}"
+                    .format(epoch=epoch, top1=top1, top5=top5, loss=losses), wrap=True, flush=True)
 
 
 def validate(val_loader, model, criterion, epoch):
@@ -334,13 +337,13 @@ def validate(val_loader, model, criterion, epoch):
                        i, len(val_loader), batch_time=batch_time, loss=losses,
                        top1=top1, top5=top5))
         print("=" * 89)
-        print(' * test epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
+        print(' * Test Epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
               .format(epoch=epoch, top1=top1, top5=top5))
         print("=" * 89)
         test_log.write(content="{epoch}\t"
-                               "{top1:.4e}\t"
-                               "{top5:.4e}\t"
-                       .format(epoch=epoch, top1=top1.avg, top5=top5.avg), wrap=True, flush=True)
+                               "{top1.avg:.4e}\t"
+                               "{top5.avg:.4e}\t"
+                       .format(epoch=epoch, top1=top1, top5=top5), wrap=True, flush=True)
 
     return top1.avg
 
@@ -362,7 +365,7 @@ def adjust_learning_rate(optimizer, stage=0, epoch=0):
     """
     decay = epoch // args.lr_decay_step[stage]
     lr = args.lr * (args.lr_decay ** decay)
-    print("stage: {stage:2d}  epoch: {epoch:3d} | "
+    print("Stage: {stage:2d}  Epoch: {epoch:3d} | "
           "learning rate = {lr:.6f} = origin x ({lr_decay:.2f} ** {decay:2d})"
           .format(stage=stage, epoch=epoch, lr=lr, lr_decay=args.lr_decay, decay=decay))
 

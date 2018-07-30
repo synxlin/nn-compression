@@ -70,7 +70,6 @@ class EncodedParam(object):
         self.encode_indices = encode_indices
         self.max_zero_run_length = max_zero_run_length = 2 ** bit_length_zero_run_length - 2
 
-        assert torch.is_tensor(param)
         self.num_el = num_el = param.numel()
         self.num_nz = self.num_el
         self.shape = param.size()
@@ -83,8 +82,8 @@ class EncodedParam(object):
                 nonzero_indices = param.nonzero()
                 self.num_nz = nonzero_indices.numel()
                 nonzero_indices = torch.sort(nonzero_indices.view(self.num_nz))
-                run_length = (nonzero_indices[1:] - nonzero_indices[:-1] - 1).cpu().tolist()
-                run_length.insert(0, nonzero_indices[0].cpu().tolist())
+                nonzero_indices[1:] -= (nonzero_indices[:-1] + 1)
+                run_length = nonzero_indices.cpu().tolist()
                 num_chunks = 0
                 run_length_chunks = []
                 for rl in run_length:
@@ -248,8 +247,8 @@ class EncodedModule(object):
         self.encoded_param = encoded_param
 
         for param_name, param in self.module.named_parameters():
-            if param_name in self.encoded_param:
-                param.data = param.data.new()
+            if 'AuxLogits' in param_name or param_name in self.encoded_param:
+                param.data.set_()
 
     def state_dict(self):
         """

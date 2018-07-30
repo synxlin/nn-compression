@@ -21,7 +21,7 @@ model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
                      and callable(models.__dict__[name]))
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+parser = argparse.ArgumentParser(description='PyTorch Quantized Training')
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
@@ -58,29 +58,33 @@ parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--pretrained', dest='pretrained', default="",
+parser.add_argument('--pretrained', dest='pretrained', default='',
                     help='use pre-trained model (after nn.DataParallel)')
-parser.add_argument('--quantize-rule', default="", help='path to quantization rule file')
-parser.add_argument('-z', '--not-fix-zeros', dest='not_fix_zeros', default=False,
+parser.add_argument('--quantize-rule', default='',
+                    help='path to quantization rule file')
+parser.add_argument('-z', '--not-fix-zeros', dest='not_fix_zeros',
                     action="store_true", help='not fix zeros in quantization')
-parser.add_argument('-c', '--update-centers-only', dest='update_centers', default=False,
-                    action="store_true", help='update centers of codebook per iteration')
-parser.add_argument('-l','--update-centers-and-labels', dest='update_labels', default=False,
-                    action="store_true", help='update centers of codebook and labels per iteration')
-parser.add_argument('-r','--re-quantize', dest='re_quantize', default=False,
-                    action="store_true", help='re-quantize (re-kmeans) per iteration')
-parser.add_argument('--nGPU', type=int, default=4, help='gpus number to use')
-parser.add_argument('--visdom', dest='visdom', default=False, action='store_true',
-                    help='open visualization')
+parser.add_argument('-c', '--update-centers-only', dest='update_centers',
+                    action="store_true",
+                    help='update centers of codebook per iteration')
+parser.add_argument('-l', '--update-centers-and-labels', dest='update_labels',
+                    action="store_true",
+                    help='update centers of codebook and labels per iteration')
+parser.add_argument('-r', '--re-quantize', dest='re_quantize', action="store_true",
+                    help='re-quantize (re-kmeans) per iteration')
+parser.add_argument('--nGPU', type=int, default=4,
+                    help='the number of gpus for training')
 
 best_prec1 = 0
 
 
 def main():
-    global args, best_prec1, train_log, test_log, quantizer
+    global args, best_prec1, train_log, test_log
     args = parser.parse_args()
     if not args.update_centers and not args.update_labels and not args.re_quantize:
+        print("set update_centers to true since previous settings change nothing after model update")
         vars(args)['update_centers'] = True
+
     dir_name = args.arch + '_' + datetime.datetime.now().strftime('%m%d_%H%M')
     log_dir = os.path.join('logs', os.path.join('quantize', dir_name))
     checkpoint_dir = os.path.join('checkpoints', os.path.join('quantize', dir_name))
@@ -89,22 +93,13 @@ def main():
     train_log = Logger(os.path.join(log_dir, 'train.log'))
     test_log = Logger(os.path.join(log_dir, 'test.log'))
     config_log = Logger(os.path.join(log_dir, 'config.log'))
-    vars(args)['experiment_id'] = dir_name
-    for key, val in vars(args).items():
-        config_log.write('{}: {}\n'.format(key, val))
 
-    loss_results, top1_results, top5_results = torch.FloatTensor(args.epochs), torch.FloatTensor(args.epochs), \
-                                               torch.FloatTensor(args.epochs)
-    if args.visdom:
-        from visdom import Visdom
-        viz = Visdom()
-        opts = [dict(title=args.experiment_id + ' Loss', ylabel='Loss', xlabel='Epoch'),
-                dict(title=args.experiment_id + ' Top-1', ylabel='Top-1', xlabel='Epoch'),
-                dict(title=args.experiment_id + ' Top-5', ylabel='Top-5', xlabel='Epoch')]
-        viz_windows = [None, None, None]
-        epochs = torch.arange(0, args.epochs)
+    for k, v in vars(args).items():
+        config_log.write(content="{k} : {v}".format(k=k, v=v), wrap=True, flush=True)
+    config_log.close()
 
     # create model
+    print("=" * 89)
     print("=> creating model '{}'".format(args.arch))
 
     if args.pretrained == 'True':
@@ -117,10 +112,10 @@ def main():
             model = models.__dict__[args.arch]()
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
-        model.features = torch.nn.DataParallel(model.features, list(range(args.nGPU)))
+        model.features = torch.nn.DataParallel(model.features, device_ids=list(range(args.nGPU)))
         model.cuda()
     else:
-        model = torch.nn.DataParallel(model, list(range(args.nGPU))).cuda()
+        model = torch.nn.DataParallel(model, device_ids=list(range(args.nGPU))).cuda()
 
     if args.pretrained and args.pretrained != 'True':
         print("=> using pre-trained model '{}'".format(args.pretrained))
@@ -140,7 +135,7 @@ def main():
                                     weight_decay=args.weight_decay)
 
     # quantize
-    quantizer = Quantizer(args.quantize_rule, fix_zeros=(not args.not_fix_zeros))
+    quantizer = Quantizer(rule=args.quantize_rule, fix_zeros=(not args.not_fix_zeros))
 
     # optionally resume from a checkpoint
     if args.resume:
@@ -151,30 +146,17 @@ def main():
             model.load_state_dict(checkpoint['state_dict'])
             if 'best_prec1' in checkpoint:
                 best_prec1 = checkpoint['best_prec1']
-            is_load_optimizer = False
+            load_optimizer = False
             if 'optimizer' in checkpoint:
                 optimizer.load_state_dict(checkpoint['optimizer'])
-                is_load_optimizer = True
+                load_optimizer = True
                 optimizer.zero_grad()
-            is_load_codebooks = False
-            if 'codebooks' in checkpoint:
-                quantizer.load_codebooks(checkpoint['codebooks'])
-                is_load_codebooks = True
-            loss_results, top1_results, top5_results = checkpoint['loss_results'], checkpoint['top1_results'], \
-                                                       checkpoint['top5_results']
-            # Add previous scores to visdom graph
-            if args.visdom and loss_results is not None:
-                x_axis = epochs[0:args.start_epoch]
-                y_axis = [loss_results[0:args.start_epoch], top1_results[0:args.start_epoch],
-                          top5_results[0:args.start_epoch]]
-                for x in range(len(viz_windows)):
-                    viz_windows[x] = viz.line(
-                        X=x_axis,
-                        Y=y_axis[x],
-                        opts=opts[x],
-                    )
-            print("=> loaded checkpoint (epoch {}, best_prec1 {}, is_load_optimizer {}, is_load_codebooks {})"
-                  .format(args.start_epoch, best_prec1, is_load_optimizer, is_load_codebooks))
+            load_quantizer = False
+            if 'quantizer' in checkpoint:
+                quantizer.load_state_dict(checkpoint['quantizer'])
+                load_quantizer = True
+            print("=> loaded checkpoint (epoch {:3d}, best_prec1 {:.3f}, load_optimizer {}, load_quantizer {})"
+                  .format(args.start_epoch, best_prec1, load_optimizer, load_quantizer))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
@@ -203,7 +185,7 @@ def main():
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
-            transforms.Scale(int(input_size/0.875)),
+            transforms.Scale(int(input_size / 0.875)),
             transforms.CenterCrop(input_size),
             transforms.ToTensor(),
             normalize,
@@ -211,47 +193,25 @@ def main():
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
-    quantizer.quantize_model(model=model)
-    best_prec1, _ = validate(val_loader, model, criterion, -1)
+    quantizer.quantize(model=model, verbose=True)
+    best_prec1 = validate(val_loader=val_loader, model=model, criterion=criterion, epoch=-1)
     save_checkpoint({
         'epoch': 0,
         'arch': args.arch,
         'state_dict': model.state_dict(),
         'best_prec1': best_prec1,
-        'codebooks': quantizer.get_codebooks(),
-    }, False, filename='quantize.pth.tar', checkpoint_dir=checkpoint_dir)
+        'quantizer': quantizer.state_dict(),
+    }, is_best=False, filename='quantize_0.pth.tar', checkpoint_dir=checkpoint_dir)
 
     for epoch in range(args.start_epoch, args.epochs):
         adjust_learning_rate(optimizer, epoch)
 
         # train for one epoch
-        loss = train(train_loader, model, criterion, optimizer, epoch, val_loader)
+        train(train_loader=train_loader, model=model, criterion=criterion, optimizer=optimizer,
+              quantizer=quantizer, epoch=epoch)
 
         # evaluate on validation set
-        prec1, prec5 = validate(val_loader, model, criterion, epoch)
-
-        loss_results[epoch] = loss
-        top1_results[epoch] = prec1
-        top5_results[epoch] = prec5
-
-        if args.visdom:
-            x_axis = epochs[0:epoch + 1]
-            y_axis = [loss_results[0:epoch + 1], top1_results[0:epoch + 1],
-                      top5_results[0:epoch + 1]]
-            for x in range(len(viz_windows)):
-                if viz_windows[x] is None:
-                    viz_windows[x] = viz.line(
-                        X=x_axis,
-                        Y=y_axis[x],
-                        opts=opts[x],
-                    )
-                else:
-                    viz.line(
-                        X=x_axis,
-                        Y=y_axis[x],
-                        win=viz_windows[x],
-                        update='replace',
-                    )
+        prec1 = validate(val_loader, model, criterion, epoch)
 
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
@@ -262,14 +222,14 @@ def main():
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
             'optimizer': optimizer.state_dict(),
-            'codebooks': quantizer.get_codebooks(),
-            'loss_results': loss_results,
-            'top1_results': top1_results,
-            'top5_results': top5_results,
-        }, is_best, checkpoint_dir=checkpoint_dir)
+            'quantizer': quantizer.state_dict(),
+        }, is_best=is_best, checkpoint_dir=checkpoint_dir)
+
+    train_log.close()
+    test_log.close()
 
 
-def train(train_loader, model, criterion, optimizer, epoch, val_loader):
+def train(train_loader, model, criterion, optimizer, quantizer, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -278,28 +238,27 @@ def train(train_loader, model, criterion, optimizer, epoch, val_loader):
 
     # switch to train mode
     model.train()
+    print("=" * 89)
 
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        target = target.cuda(async=True)
-        input_var = torch.autograd.Variable(input)
-        target_var = torch.autograd.Variable(target)
+        target = target.cuda(non_blocking=True)
 
         # compute output
         if args.arch.startswith('inception'):
-            output, aux_output = model(input_var)
-            loss = criterion(output, target_var) + criterion(aux_output, target_var)
+            output, aux_output = model(input)
+            loss = criterion(output, target) + criterion(aux_output, target)
 
         else:
-            output = model(input_var)
-            loss = criterion(output, target_var)
+            output = model(input)
+            loss = criterion(output, target)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        losses.update(loss.data[0], input.size(0))
+        prec1, prec5 = accuracy(output, target, topk=(1, 5))
+        losses.update(loss.item(), input.size(0))
         top1.update(prec1[0], input.size(0))
         top5.update(prec5[0], input.size(0))
 
@@ -307,9 +266,10 @@ def train(train_loader, model, criterion, optimizer, epoch, val_loader):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
         # quantize
-        quantizer.quantize_model(model, update_centers=args.update_centers,
-                                 update_labels=args.update_labels, re_quantize=args.re_quantize)
+        quantizer.quantize(model=model, update_centers=args.update_centers,
+                           update_labels=args.update_labels, re_quantize=args.re_quantize)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -324,12 +284,15 @@ def train(train_loader, model, criterion, optimizer, epoch, val_loader):
                   'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
-        if i == len(train_loader) // 2:
-            validate(val_loader, model, criterion, epoch)
-            model.train()
-    print('* Train epoch # %d    top1:  %.3f  top5:  %.3f' % (epoch, top1.avg, top5.avg))
-    train_log.write('%d\t%.4e\t%.4e\t%.4e\t\n' % (epoch, top1.avg, top5.avg, losses.avg))
-    return losses.avg
+    print("=" * 89)
+    print(' * Train Epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
+          .format(epoch=epoch, top1=top1, top5=top5))
+    print("=" * 89)
+    train_log.write(content="{epoch}\t"
+                            "{top1.avg:.4e}\t"
+                            "{top5.avg:.4e}\t"
+                            "{loss.avg:.4e}"
+                    .format(epoch=epoch, top1=top1, top5=top5, loss=losses), wrap=True, flush=True)
 
 
 def validate(val_loader, model, criterion, epoch):
@@ -340,20 +303,19 @@ def validate(val_loader, model, criterion, epoch):
 
     # switch to evaluate mode
     model.eval()
+    print("=" * 89)
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        target = target.cuda(async=True)
-        input_var = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target, volatile=True)
+        target = target.cuda(non_blocking=True)
 
         # compute output
-        output = model(input_var)
-        loss = criterion(output, target_var)
+        output = model(input)
+        loss = criterion(output, target)
 
         # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        losses.update(loss.data[0], input.size(0))
+        prec1, prec5 = accuracy(output, target, topk=(1, 5))
+        losses.update(loss.item(), input.size(0))
         top1.update(prec1[0], input.size(0))
         top5.update(prec5[0], input.size(0))
 
@@ -370,25 +332,36 @@ def validate(val_loader, model, criterion, epoch):
                    i, len(val_loader), batch_time=batch_time, loss=losses,
                    top1=top1, top5=top5))
 
-    print('* Test epoch # %d    top1: %.3f    top5: %.3f' % (epoch, top1.avg, top5.avg))
-    test_log.write('%d\t%.4e\t%.4e\n' % (epoch, top1.avg, top5.avg))
+    print("=" * 89)
+    print(' * Test Epoch: {epoch:3d} | Prec@1: {top1.avg:.3f} | Prec@5: {top5.avg:.3f}'
+          .format(epoch=epoch, top1=top1, top5=top5))
+    print("=" * 89)
+    test_log.write(content="{epoch}\t"
+                           "{top1.avg:.4e}\t"
+                           "{top5.avg:.4e}\t"
+                   .format(epoch=epoch, top1=top1, top5=top5), wrap=True, flush=True)
 
-    return top1.avg, top5.avg
+    return top1.avg
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', checkpoint_dir='.'):
     filename = os.path.join(checkpoint_dir, filename)
-    torch.save(state, filename)
+    torch.save(state, filename, pickle_protocol=4)
     if is_best:
         shutil.copyfile(filename, os.path.join(checkpoint_dir, 'model_best.pth.tar'))
 
 
 def adjust_learning_rate(optimizer, epoch):
-    """Sets the learning rate to the initial LR decayed by 10 every lr_decay_step epochs"""
+    """
+    Sets the learning rate to the initial LR decayed by args.lr_decay every lr_decay_step epochs
+    :param optimizer:
+    :param epoch:
+    :return:
+    """
     decay = epoch // args.lr_decay_step
     lr = args.lr * (args.lr_decay ** decay)
-    print('Epoch: %d  change learning rate to %f = origin time 0.1 ** %d' % (epoch,
-                                                                             lr, decay))
+    print("Epoch: {epoch:3d} | learning rate = {lr:.6f} = origin x ({lr_decay:.2f} ** {decay:2d})"
+          .format(epoch=epoch, lr=lr, lr_decay=args.lr_decay, decay=decay))
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 

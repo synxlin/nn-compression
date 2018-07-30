@@ -156,10 +156,14 @@ class Codec(object):
         assert isinstance(model, torch.nn.Module)
         print("=" * 89)
         print("Start Decoding")
-        for param_name, _ in model.named_parameters():
-            if param_name in state_dict:
+        for param_name, param in model.named_parameters():
+            if 'AuxLogits' in param_name:
+                # deal with googlenet
+                state_dict[param_name] = param.data
+            elif param_name in state_dict:
                 print("Decoding {}".format(param_name))
-                state_dict[param_name] = state_dict[param_name].data
+                encoded_param = EncodedParam().load_state_dict(state_dict[param_name])
+                state_dict[param_name] = encoded_param.data
         model = model.load_state_dict(state_dict)
         print("Stop Decoding")
         print("=" * 89)

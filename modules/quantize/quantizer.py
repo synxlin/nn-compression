@@ -154,7 +154,7 @@ class Quantizer(object):
                       "skipping".format(param_name=param_name))
             return None
 
-    def quantize_model(self, model, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
+    def quantize(self, model, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
         """
         quantize model
         :param model: torch.nn.module
