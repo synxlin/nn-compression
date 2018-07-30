@@ -93,8 +93,8 @@ def main():
     print("=> creating model '{}'".format(args.arch))
 
     if args.pretrained == 'True':
-            print("=> using pre-trained model from model zoo")
-            model = models.__dict__[args.arch](pretrained=True)
+        print("=> using pre-trained model from model zoo")
+        model = models.__dict__[args.arch](pretrained=True)
     else:
         if args.arch.startswith('inception'):
             model = models.__dict__[args.arch](transform_input=True)

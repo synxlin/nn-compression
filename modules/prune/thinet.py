@@ -124,14 +124,14 @@ def weight_reconstruction_thinet(next_module, next_input_feature, next_output_fe
     next_module.weight = torch.nn.Parameter(param)
 
 
-def prune_thinet(sparsity, module, next_module, input_feature, fn_next_input_feature, method='greedy', cpu=True):
+def prune_thinet(sparsity, module, next_module, fn_next_input_feature, input_feature, method='greedy', cpu=True):
     """
     ThiNet pruning core function
     :param sparsity: float, pruning sparsity
     :param module: torch.nn.module, module of the layer being pruned
     :param next_module: torch.nn.module, module of the next layer to the one being pruned
-    :param input_feature: torch.(cuda.)Tensor, input feature map of the layer being pruned
     :param fn_next_input_feature: function, function to calculate the input feature map for next_module
+    :param input_feature: torch.(cuda.)Tensor, input feature map of the layer being pruned
     :param method: str
         'greedy': select one contributed to the smallest next feature after another
         'random': randomly select
