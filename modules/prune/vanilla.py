@@ -84,7 +84,7 @@ def prune_vanilla_filterwise(sparsity, param):
 
 class VanillaPruner(object):
 
-    def __init__(self, rule, granularity='element'):
+    def __init__(self, rule=None, granularity='element'):
         """
         Pruner Class for Vanilla Pruning Method
         :param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
@@ -95,16 +95,16 @@ class VanillaPruner(object):
             content = map(lambda x: x.split(), open(rule).readlines())
             content = filter(lambda x: len(x) == 2, content)
             rule = list(map(lambda x: (x[0], list(map(float, x[1].split(',')))), content))
-        assert isinstance(rule, list) or isinstance(rule, tuple)
+        assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
         self.rule = rule
-        self.max_num_stage = max(map(lambda x: len(x[1]), rule))
+        self.max_num_stage = 0 if rule is None else max(map(lambda x: len(x[1]), rule))
 
         if granularity == 'element':
-            self.prune = prune_vanilla_elementwise
+            self.fn_prune = prune_vanilla_elementwise
         elif granularity == 'kernel':
-            self.prune = prune_vanilla_kernelwise
+            self.fn_prune = prune_vanilla_kernelwise
         elif granularity == 'filter':
-            self.prune = prune_vanilla_filterwise
+            self.fn_prune = prune_vanilla_filterwise
         else:
             raise NotImplementedError
         self.granularity = granularity
@@ -127,7 +127,15 @@ class VanillaPruner(object):
         if not keep_rule:
             self.rule = state_dict['rule']
             self.max_num_stage = max(map(lambda x: len(x[1]), self.rule))
-            self.granularity = state_dict['granularity']
+            self.granularity = granularity = state_dict['granularity']
+            if granularity == 'element':
+                self.fn_prune = prune_vanilla_elementwise
+            elif granularity == 'kernel':
+                self.fn_prune = prune_vanilla_kernelwise
+            elif granularity == 'filter':
+                self.fn_prune = prune_vanilla_filterwise
+            else:
+                raise NotImplementedError
         self.masks = state_dict['masks']
         print("=" * 89)
         print("Customizing Vanilla Pruner\n"
@@ -172,7 +180,7 @@ class VanillaPruner(object):
                       "stage: {stage:02d}\t\t"
                       "sparsity: {spars:.3f}"
                       .format(param_name=param_name, stage=stage, spars=sparsity))
-            mask = self.prune(sparsity=sparsity, param=param)
+            mask = self.fn_prune(sparsity=sparsity, param=param)
             return mask
         else:
             if verbose:
@@ -195,7 +203,7 @@ class VanillaPruner(object):
             print("updating masks")
             print("=" * 89)
         for param_name, param in model.named_parameters():
-            if param.dim() > 1:
+            if param.dim() > 1 and 'AuxLogits' not in param_name:
                 if update_masks:
                     mask = self.prune_param(param=param.data, param_name=param_name, stage=stage, verbose=verbose)
                     if mask is not None:
@@ -203,6 +211,6 @@ class VanillaPruner(object):
                 else:
                     if param_name in self.masks:
                         mask = self.masks[param_name]
-                        param.masked_fill_(mask, 0)
+                        param.data.masked_fill_(mask, 0)
         if update_masks and verbose:
             print("=" * 89)

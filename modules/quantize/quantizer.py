@@ -48,7 +48,7 @@ def quantize(fix_zeros=True, method='k-means', guess=None, **options):
 # TODO: fixed point arg
 class Quantizer(object):
 
-    def __init__(self, rule, fix_zeros=True):
+    def __init__(self, rule=None, fix_zeros=True):
         """
         Quantizer class for quantization
         :param rule: str, path to the rule file, each line formats 'param_name quantization_bit_length initial_guess'
@@ -58,8 +58,8 @@ class Quantizer(object):
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
             content = filter(lambda x: len(x) == 4, content)
-            rule = list(map(lambda x: (x[0], int(x[1]), x[2], x[3]), content))
-        assert isinstance(rule, list) or isinstance(rule, tuple)
+            rule = list(map(lambda x: (x[0], 2 ** int(x[1]), x[2], x[3]), content))
+        assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
         self.rule = rule
 
         self.codebooks = dict()

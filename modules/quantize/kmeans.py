@@ -4,7 +4,7 @@ import torch
 
 
 # TODO: fixed point arg
-def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=False,
+def quantize_k_means(param, codebook=None, k=16, guess='k-means++', update_centers=False,
                      update_labels=False, re_quantize=False):
     """
     quantize using k-means clustering
@@ -31,7 +31,7 @@ def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=Fals
         #     print("------   re-quantizing   ------")
         param_numpy = param_1d.view(num_el, 1).cpu().numpy()
 
-        if guess is 'uniform':
+        if guess == 'uniform':
             guess = np.linspace(np.min(param_numpy), np.max(param_numpy), k)
             guess = guess.reshape(guess.size, 1)
         codebook = KMeans(n_clusters=k, init=guess, n_jobs=-1).fit(param_numpy)
@@ -42,7 +42,7 @@ def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=Fals
 
     elif update_centers or update_labels:
         if update_labels:
-            sorted_centers, indices = torch.sort(codebook.cluster_centers, dim=0)
+            sorted_centers, indices = torch.sort(codebook.cluster_centers_, dim=0)
             boundaries = (sorted_centers[1:] + sorted_centers[:-1]) / 2
             sorted_labels = torch.ge(param_1d - boundaries, 0).long().sum(dim=0)
             codebook.labels_ = indices.index_select(0, sorted_labels).view(num_el)
@@ -60,7 +60,7 @@ def quantize_k_means(param, codebook=None, k=16, guess=None, update_centers=Fals
 
 
 # TODO: fixed point arg
-def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess=None, update_centers=False,
+def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess='k-means++', update_centers=False,
                                update_labels=False, re_quantize=False):
     """
     quantize using k-means clustering while fixing the zeros
@@ -91,7 +91,7 @@ def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess=None, update_ce
         param_nz = param_numpy[param_numpy != 0]
         param_nz = param_nz.reshape(param_nz.size, 1)
 
-        if guess is 'uniform':
+        if guess == 'uniform':
             guess = np.linspace(np.min(param_nz), np.max(param_nz), k - 1)  # one less cluster due to zero-fixed
             guess = guess.reshape(guess.size, 1)
         codebook = KMeans(n_clusters=k-1, init=guess, n_jobs=-1).fit(param_nz)  # one less cluster due to zero-fixed
