@@ -2,74 +2,76 @@ import re
 from sklearn.cluster import KMeans
 import torch
 
+from .fixed_point import quantize_fixed_point
 from .linear import quantize_linear, quantize_linear_fix_zeros
 from .kmeans import quantize_k_means, quantize_k_means_fix_zeros
 
 
-# TODO: fixed point arg
-def quantize(fix_zeros=True, method='k-means', guess=None, **options):
+def quantize(method='k-means', fix_zeros=True, **options):
     """
     returns quantization function based on the options
     :param fix_zeros: bool, whether to fix zeros in the param
     :param method: str, quantization method, choose from 'linear', 'k-means'
+    :param bit_length: int, bit length of fixed point param, default=8
+    :param bit_length_integer: int, bit length of integer part
+                                    of fixed point param, default=0
+    :param k: int, the number of quantization level, default=16
+    :param codebook: sklearn.cluster.KMeans, codebook of quantization, default=None
     :param guess: str, initial quantization centroid generation method,
-                       choose from 'uniform', 'linear', 'random', 'k-means++'
+                       choose from 'linear', 'random', 'k-means++'
                   numpy.ndarray of shape (num_el, 1)
-    :param update_centers: bool, whether to update quantization centroids when using k-means
-    :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+    :param update_labels: bool, whether to re-allocate the param elements
+                                to the latest centroids when using k-means
     :param re_quantize: bool, whether to re-quantize the param when using k-means
     :return:
-        function, quantization function
+        codebook
     """
-    assert method in ['linear', 'k-means']
-    # check guess options
-    if method == 'linear':
-        guess = 'linear'
-    elif 'random' in guess:
-        guess = 'random'
-    elif 'uniform' in guess:
-        guess = 'uniform'
-    elif isinstance(guess, str):
-        guess = 'k-means++'
-    else:
-        assert torch.is_tensor(guess)
-        guess = guess.view(guess.numel(), 1).cpu().numpy()
-    if method == 'linear':
+    if method == 'k-means':
+        if fix_zeros:
+            return quantize_k_means_fix_zeros(**options)
+        else:
+            return quantize_k_means(**options)
+    elif method == 'linear':
         if fix_zeros:
             return quantize_linear_fix_zeros(**options)
         else:
             return quantize_linear(**options)
-    elif fix_zeros:
-        return quantize_k_means_fix_zeros(guess=guess, **options)
     else:
-        return quantize_k_means(guess=guess, **options)
+        return quantize_fixed_point(**options)
 
 
-# TODO: fixed point arg
 class Quantizer(object):
 
     def __init__(self, rule=None, fix_zeros=True):
         """
         Quantizer class for quantization
-        :param rule: str, path to the rule file, each line formats 'param_name quantization_bit_length initial_guess'
-                     list of tuple, [(param_name(str), quantization_bit_length(int), method(str), initial_guess(str))]
+        :param rule: str, path to the rule file, each line formats
+                        'param_name method bit_length initial_guess_or_bit_length_of_integer'
+                     list of tuple,
+                        [(param_name(str), method(str), bit_length(int),
+                          initial_guess(str)_or_bit_length_of_integer(int))]
         :param fix_zeros: whether to fix zeros when quantizing
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
             content = filter(lambda x: len(x) == 4, content)
-            rule = list(map(lambda x: (x[0], 2 ** int(x[1]), x[2], x[3]), content))
+            rule = list(map(lambda x: (x[0], x[1], int(x[2]),
+                                       int(x[3]) if x[1] == 'fixed_point' else x[3]),
+                            content))
         assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
         self.rule = rule
 
         self.codebooks = dict()
         self.fix_zeros = fix_zeros
-        self.quantize = quantize
+        self.fn_quantize = quantize
 
         print("=" * 89)
-        print("Initializing Quantizer\n"
-              "Rules:\n"
-              "{rule}".format(rule=self.rule))
+        if self.rule is None:
+            print("Initializing Quantizer WITHOUT rules")
+        else:
+            print("Initializing Quantizer with rules:")
+            for r in self.rule:
+                print(r)
         print("=" * 89)
 
     def load_state_dict(self, state_dict):
@@ -90,11 +92,10 @@ class Quantizer(object):
             else:
                 self.codebooks[name] = codebook
         print("=" * 89)
-        print("Customizing Quantizer\n"
-              "Rules:\n"
-              "{rule}".format(rule=self.rule))
+        print("Customizing Quantizer with rules:")
+        for r in self.rule:
+            print(r)
         print("=" * 89)
-        return self
 
     def state_dict(self):
         """
@@ -111,6 +112,7 @@ class Quantizer(object):
                     'params': codebook.get_params(),
                     'centers': codebook.cluster_centers_,
                     'labels': codebook.labels_,
+                    'method': 'k-means'
                 }
             else:
                 codebooks[name] = codebook
@@ -122,8 +124,8 @@ class Quantizer(object):
         quantize param
         :param param: torch.(cuda.)tensor
         :param param_name: str, name of param
-        :param update_centers: bool, whether to update quantization centroids when using k-means
-        :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+        :param update_labels: bool, whether to re-allocate the param elements
+                                    to the latest centroids when using k-means
         :param re_quantize: bool, whether to re-quantize the param when using k-means
         :param verbose: bool, whether to print quantize details
         :return:
@@ -131,35 +133,56 @@ class Quantizer(object):
             sklearn.cluster.KMeans, codebook of k-means quantization
         """
         rule_id = -1
-        for idx, x in enumerate(self.rule):
-            m = re.match(x[0], param_name)
+        for idx, r in enumerate(self.rule):
+            m = re.match(r[0], param_name)
             if m is not None and len(param_name) == m.span()[1]:
                 rule_id = idx
                 break
         if rule_id > -1:
-            k = self.rule[rule_id][1]
-            method = self.rule[rule_id][2]
+            method = self.rule[rule_id][1]
+            bit_length = self.rule[rule_id][2]
+            k = 2 ** bit_length
             guess = self.rule[rule_id][3]
+            bit_length_integer = guess
+            if k <= 0:
+                if verbose:
+                    print("{param_name:^30} | skipping".format(param_name=param_name))
+                return None
             codebook = self.codebooks.get(param_name)
-            if codebook is None and verbose:
-                print("{param_name:^30}:\t\t"
-                      "quantize level: {k:02d}".format(param_name=param_name, k=k))
-            codebook = self.quantize(fix_zeros=self.fix_zeros, method=method, guess=guess,
-                                     param=param, codebook=codebook, k=k,
-                                     **quantize_options)
+            if verbose:
+                if codebook is None:
+                    print("{param_name:^30} | {bit_length:2d} bit | initializing".
+                          format(param_name=param_name, bit_length=bit_length))
+                elif method == 'k-means':
+                    if quantize_options.get('re_quantize'):
+                        print("{param_name:^30} | {bit_length:2d} bit | re-quantizing".
+                              format(param_name=param_name, bit_length=bit_length))
+                    elif quantize_options.get('update_labels'):
+                        print("{param_name:^30} | {bit_length:2d} bit | updating labels and centroids".
+                              format(param_name=param_name, bit_length=bit_length))
+                    else:
+                        print("{param_name:^30} | {bit_length:2d} bit | updating centroids only".
+                              format(param_name=param_name, bit_length=bit_length))
+                else:
+                    print("{param_name:^30} | {bit_length:2d} bit | re-quantizing".
+                          format(param_name=param_name, bit_length=bit_length))
+            codebook = self.fn_quantize(method=method, fix_zeros=self.fix_zeros,
+                                        param=param, bit_length=bit_length,
+                                        bit_length_integer=bit_length_integer,
+                                        k=k, guess=guess, codebook=codebook,
+                                        **quantize_options)
             return codebook
         else:
             if verbose:
-                print("{param_name:^30}:\t\t"
-                      "skipping".format(param_name=param_name))
+                print("{param_name:^30} | skipping".format(param_name=param_name))
             return None
 
-    def quantize(self, model, update_centers=False, update_labels=False, re_quantize=False, verbose=False):
+    def quantize(self, model, update_labels=False, re_quantize=False, verbose=False):
         """
         quantize model
         :param model: torch.nn.module
-        :param update_centers: bool, whether to update quantization centroids when using k-means
-        :param update_labels: bool, whether to re-allocate the param elements to the latest centroids when using k-means
+        :param update_labels: bool, whether to re-allocate the param elements
+                                    to the latest centroids when using k-means
         :param re_quantize: bool, whether to re-quantize the param when using k-means
         :param verbose: bool, whether to print quantize details
         :return:
@@ -167,13 +190,14 @@ class Quantizer(object):
         """
         if verbose:
             print("=" * 89)
-            print("quantizing model")
+            print("Quantizing Model")
             print("=" * 89)
+            print("{name:^30} | qz bit | state".format(name='param_name'))
         for param_name, param in model.named_parameters():
             if param.dim() > 1:
-                codebook = self.quantize_param(param.data, param_name, update_centers=update_centers,
-                                               update_labels=update_labels, re_quantize=re_quantize,
-                                               verbose=verbose)
+                codebook = self.quantize_param(param.data, param_name, verbose=verbose,
+                                               update_labels=update_labels,
+                                               re_quantize=re_quantize)
                 if codebook is not None:
                     self.codebooks[param_name] = codebook
         if verbose:

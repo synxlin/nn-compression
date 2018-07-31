@@ -1,4 +1,20 @@
 import os
+from itertools import islice
+
+
+def iter_str_every(iterable, k):
+    """
+
+    :param iterable:
+    :param k:
+    :return:
+    """
+    i = iter(iterable)
+    piece = ''.join(islice(i, k))
+    while piece:
+        yield piece
+        piece = ''.join(islice(i, k))
+
 
 def get_sparsity(param):
     """

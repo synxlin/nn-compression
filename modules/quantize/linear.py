@@ -4,7 +4,6 @@ import torch
 magic_percentile = 0.001
 
 
-# TODO: fixed point arg
 def quantize_linear(param, k=16, **unused):
     """
     linearly quantize
@@ -24,11 +23,12 @@ def quantize_linear(param, k=16, **unused):
     step = (param_max - param_min) / (k - 1)
     param.clamp_(param_min, param_max).sub_(param_min).div_(step).round_().mul_(step).add_(param_min)
     # codebook = {'centers_': torch.tensor(list(set(param_flatten.cpu().tolist())))}
-    codebook = {'centers_': torch.linspace(param_min, param_max, k)}
+    codebook = {'cluster_centers_': torch.linspace(param_min, param_max, k),
+                'method': 'linear',
+                }
     return codebook
 
 
-# TODO: fixed point arg
 def quantize_linear_fix_zeros(param, k=16, **unused):
     """
     linearly quantize while fixing zeros
@@ -50,6 +50,8 @@ def quantize_linear_fix_zeros(param, k=16, **unused):
     param.clamp_(param_min, param_max).sub_(param_min).div_(step).round_().mul_(step).add_(param_min)
     param.masked_fill_(zero_mask, 0)  # recover zeros
     # codebook = {'centers_': torch.tensor(list(set(param_flatten.cpu().tolist())))}
-    codebook = {'centers_': torch.zeros(k)}
-    codebook['centers_'][1:] = torch.linspace(param_min, param_max, k - 1)
+    codebook = {'cluster_centers_': torch.zeros(k),
+                'method': 'linear',
+                }
+    codebook['cluster_centers_'][1:] = torch.linspace(param_min, param_max, k - 1)
     return codebook

@@ -64,11 +64,7 @@ parser.add_argument('--quantize-rule', default='',
                     help='path to quantization rule file')
 parser.add_argument('-z', '--not-fix-zeros', dest='not_fix_zeros',
                     action="store_true", help='not fix zeros in quantization')
-parser.add_argument('-c', '--update-centers-only', dest='update_centers',
-                    action="store_true",
-                    help='update centers of codebook per iteration')
-parser.add_argument('-l', '--update-centers-and-labels', dest='update_labels',
-                    action="store_true",
+parser.add_argument('-l', '--update-labels', dest='update_labels', action="store_true",
                     help='update centers of codebook and labels per iteration')
 parser.add_argument('-r', '--re-quantize', dest='re_quantize', action="store_true",
                     help='re-quantize (re-kmeans) per iteration')
@@ -81,9 +77,6 @@ best_prec1 = 0
 def main():
     global args, best_prec1, train_log, test_log
     args = parser.parse_args()
-    if not args.update_centers and not args.update_labels and not args.re_quantize:
-        print("set update_centers to true since previous settings change nothing after model update")
-        vars(args)['update_centers'] = True
 
     dir_name = args.arch + '_' + datetime.datetime.now().strftime('%m%d_%H%M')
     log_dir = os.path.join('logs', os.path.join('quantize', dir_name))
@@ -268,8 +261,7 @@ def train(train_loader, model, criterion, optimizer, quantizer, epoch):
         optimizer.step()
 
         # quantize
-        quantizer.quantize(model=model, update_centers=args.update_centers,
-                           update_labels=args.update_labels, re_quantize=args.re_quantize)
+        quantizer.quantize(model=model, update_labels=args.update_labels, re_quantize=args.re_quantize)
 
         # measure elapsed time
         batch_time.update(time.time() - end)

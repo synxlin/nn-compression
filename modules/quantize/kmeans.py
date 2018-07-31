@@ -3,20 +3,19 @@ from sklearn.cluster import KMeans
 import torch
 
 
-# TODO: fixed point arg
-def quantize_k_means(param, codebook=None, k=16, guess='k-means++', update_centers=False,
-                     update_labels=False, re_quantize=False):
+def quantize_k_means(param, k=16, codebook=None, guess='k-means++',
+                     update_labels=False, re_quantize=False, **unused):
     """
     quantize using k-means clustering
     :param param:
     :param codebook: sklearn.cluster.KMeans, codebook of quantization, default=None
     :param k: int, the number of quantization level, default=16
     :param guess: str, initial quantization centroid generation method,
-                       choose from 'uniform', 'linear', 'random', 'k-means++'
+                       choose from 'linear', 'random', 'k-means++'
                   numpy.ndarray of shape (num_el, 1)
-    :param update_centers: bool, whether to update quantization centroids
     :param update_labels: bool, whether to re-allocate the param elements to the latest centroids
     :param re_quantize: bool, whether to re-quantize the param
+    :param unused: unused options
     :return:
         sklearn.cluster.KMeans, codebook of quantization
     """
@@ -25,13 +24,9 @@ def quantize_k_means(param, codebook=None, k=16, guess='k-means++', update_cente
     param_1d = param.view(num_el)
 
     if codebook is None or re_quantize:
-        # if codebook is None:
-        #     print("------ creating codebook ------")
-        # else:
-        #     print("------   re-quantizing   ------")
         param_numpy = param_1d.view(num_el, 1).cpu().numpy()
 
-        if guess == 'uniform':
+        if guess == 'linear':
             guess = np.linspace(np.min(param_numpy), np.max(param_numpy), k)
             guess = guess.reshape(guess.size, 1)
         codebook = KMeans(n_clusters=k, init=guess, n_jobs=-1).fit(param_numpy)
@@ -40,7 +35,7 @@ def quantize_k_means(param, codebook=None, k=16, guess='k-means++', update_cente
         if param.is_cuda:
             codebook.cluster_centers_ = codebook.cluster_centers_.cuda(param.device)
 
-    elif update_centers or update_labels:
+    else:
         if update_labels:
             sorted_centers, indices = torch.sort(codebook.cluster_centers_, dim=0)
             boundaries = (sorted_centers[1:] + sorted_centers[:-1]) / 2
@@ -50,29 +45,25 @@ def quantize_k_means(param, codebook=None, k=16, guess='k-means++', update_cente
             codebook.cluster_centers_[i, 0] = param_1d[codebook.labels_ == i].mean()
 
     param_quantize = codebook.cluster_centers_[codebook.labels_].view(param_shape)
-    if param.is_cuda:
-        param_quantize = param_quantize.cuda(param.device)
-    else:
+    if param.is_contiguous():
         param_quantize = param_quantize.contiguous()
     param.set_(param_quantize)
 
     return codebook
 
 
-# TODO: fixed point arg
-def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess='k-means++', update_centers=False,
-                               update_labels=False, re_quantize=False):
+def quantize_k_means_fix_zeros(param, k=16, guess='k-means++', codebook=None,
+                               update_labels=False, re_quantize=False, **unused):
     """
     quantize using k-means clustering while fixing the zeros
     :param param:
     :param codebook: sklearn.cluster.KMeans, codebook of quantization, default=None
     :param k: int, the number of quantization level, default=16
     :param guess: str, initial quantization centroid generation method,
-                       choose from 'uniform', 'linear', 'random', 'k-means++'
-                  numpy.ndarray of shape (num_el, 1)
-    :param update_centers: bool, whether to update quantization centroids
+                       choose from 'linear', 'random', 'k-means++'
     :param update_labels: bool, whether to re-allocate the param elements to the latest centroids
     :param re_quantize: bool, whether to re-quantize the param
+    :param unused: unused options
     :return:
         sklearn.cluster.KMeans, codebook of quantization
     """
@@ -83,15 +74,11 @@ def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess='k-means++', up
         param_1d[codebook.labels_ == 0] = 0
 
     if codebook is None or re_quantize:
-        # if codebook is None:
-        #     print("------ creating codebook ------")
-        # else:
-        #     print("------   re-quantizing   ------")
         param_numpy = param_1d.cpu().numpy()
         param_nz = param_numpy[param_numpy != 0]
         param_nz = param_nz.reshape(param_nz.size, 1)
 
-        if guess == 'uniform':
+        if guess == 'linear':
             guess = np.linspace(np.min(param_nz), np.max(param_nz), k - 1)  # one less cluster due to zero-fixed
             guess = guess.reshape(guess.size, 1)
         codebook = KMeans(n_clusters=k-1, init=guess, n_jobs=-1).fit(param_nz)  # one less cluster due to zero-fixed
@@ -110,7 +97,7 @@ def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess='k-means++', up
         # labels_ = torch.from_numpy(codebook.labels_).long().cuda().add_(1)
         # codebook.labels_ = labels_.new(num_el).zero_().index_copy_(0, nonzero_indices, labels_)
 
-    elif update_centers or update_labels:
+    else:
         if update_labels:
             sorted_centers, indices = torch.sort(codebook.cluster_centers_, dim=0)
             boundaries = (sorted_centers[1:] + sorted_centers[:-1]) / 2
@@ -121,9 +108,7 @@ def quantize_k_means_fix_zeros(param, codebook=None, k=16, guess='k-means++', up
             codebook.cluster_centers_[i, 0] = param_1d[codebook.labels_ == i].mean()
 
     param_quantize = codebook.cluster_centers_[codebook.labels_].view(param_shape)
-    if param.is_cuda:
-        param_quantize = param_quantize.cuda(param.device)
-    else:
+    if not param.is_contiguous():
         param_quantize = param_quantize.contiguous()
     param.set_(param_quantize)
 

@@ -112,9 +112,12 @@ class VanillaPruner(object):
         self.masks = dict()
 
         print("=" * 89)
-        print("Initializing Vanilla Pruner\n"
-              "Rules:\n"
-              "{rule}".format(rule=self.rule))
+        if self.rule is None:
+            print("Initializing Vanilla Pruner WITHOUT rules")
+        else:
+            print("Initializing Vanilla Pruner with rules:")
+            for r in self.rule:
+                print(r)
         print("=" * 89)
 
     def load_state_dict(self, state_dict, keep_rule=False):
@@ -138,11 +141,10 @@ class VanillaPruner(object):
                 raise NotImplementedError
         self.masks = state_dict['masks']
         print("=" * 89)
-        print("Customizing Vanilla Pruner\n"
-              "Rules:\n"
-              "{rule}".format(rule=self.rule))
+        print("Customizing Vanilla Pruner with rules:")
+        for r in self.rule:
+            print(r)
         print("=" * 89)
-        return self
 
     def state_dict(self):
         """
@@ -176,15 +178,13 @@ class VanillaPruner(object):
             stage = min(max(0, stage), max_num_stage)
             sparsity = self.rule[rule_id][1][stage]
             if verbose:
-                print("{param_name:^30}:\t\t"
-                      "stage: {stage:02d}\t\t"
-                      "sparsity: {spars:.3f}"
-                      .format(param_name=param_name, stage=stage, spars=sparsity))
+                print("{param_name:^30} | {stage:5d} | {spars:.3f}".
+                      format(param_name=param_name, stage=stage, spars=sparsity))
             mask = self.fn_prune(sparsity=sparsity, param=param)
             return mask
         else:
             if verbose:
-                print("{param_name:^30}:\t\tskipping".format(param_name=param_name))
+                print("{param_name:^30} | skipping".format(param_name=param_name))
             return None
 
     def prune(self, model, stage=0, update_masks=False, verbose=False):
@@ -198,19 +198,27 @@ class VanillaPruner(object):
             void
         """
         update_masks = True if update_masks or len(self.masks) == 0 else False
-        if update_masks:
+        if verbose:
             print("=" * 89)
-            print("updating masks")
+            print("Pruning Models")
+            if len(self.masks) == 0:
+                print("Initializing Masks")
+            elif update_masks:
+                print("Updating Masks")
             print("=" * 89)
+            print("{name:^30} | stage | sparsity".format(name='param_name'))
         for param_name, param in model.named_parameters():
-            if param.dim() > 1 and 'AuxLogits' not in param_name:
-                if update_masks:
-                    mask = self.prune_param(param=param.data, param_name=param_name, stage=stage, verbose=verbose)
-                    if mask is not None:
-                        self.masks[param_name] = mask
-                else:
-                    if param_name in self.masks:
-                        mask = self.masks[param_name]
-                        param.data.masked_fill_(mask, 0)
-        if update_masks and verbose:
+            if 'AuxLogits' not in param_name:
+                # deal with googlenet
+                if param.dim() > 1:
+                    if update_masks:
+                        mask = self.prune_param(param=param.data, param_name=param_name,
+                                                stage=stage, verbose=verbose)
+                        if mask is not None:
+                            self.masks[param_name] = mask
+                    else:
+                        if param_name in self.masks:
+                            mask = self.masks[param_name]
+                            param.data.masked_fill_(mask, 0)
+        if verbose:
             print("=" * 89)

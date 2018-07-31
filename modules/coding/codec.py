@@ -110,19 +110,19 @@ class Codec(object):
                               mem_param=stats['memory_size']['param'], mem_index=stats['memory_size']['index'],
                               mem_codebook=stats['memory_size']['codebook'],
                               compression_ratio=stats['compression_ratio']))
-                encoded_params[param_name] = encoded_param.state_dict()
+                encoded_params[param_name] = encoded_param
                 # statistics
-                self.stats['compression_ratio']['compressed'].accumulate(stats['memory_size']['total'],
-                                                                         stats['num_el'] * 32)
-                self.stats['compression_ratio']['total'].accumulate(stats['memory_size']['total'],
-                                                                    stats['num_el'] * 32)
+                self.stats['compression_ratio']['compressed'].accumulate(stats['num_el'] * 32,
+                                                                         stats['memory_size']['total'])
+                self.stats['compression_ratio']['total'].accumulate(stats['num_el'] * 32,
+                                                                    stats['memory_size']['total'])
                 self.stats['memory_size']['codebook'].accumulate(stats['memory_size']['codebook'])
                 self.stats['memory_size']['param'].accumulate(stats['memory_size']['param'])
                 self.stats['memory_size']['index'].accumulate(stats['memory_size']['index'])
                 self.stats['memory_size']['compressed_param'].accumulate(stats['memory_size']['param'])
                 self.stats['detail'][param_name] = stats
             else:
-                print("{:<30} | skipping".format(param_name))
+                print("{:^30} | skipping".format(param_name))
                 memory_size_param = param.data.numel() * 32
                 self.stats['compression_ratio']['total'].accumulate(memory_size_param, memory_size_param)
                 self.stats['memory_size']['param'].accumulate(memory_size_param)
@@ -131,16 +131,16 @@ class Codec(object):
         print("=" * 89)
         print("Compress Ratio               | {}\n"
               "Overall Compress Ratio       | {}\n"
-              "Codebook Memory Size         | {}\n"
-              "Compressed Param Memory Size | {}\n"
-              "Index Memory Size            | {}\n"
-              "Overall Param Memory Size    | {}"
+              "Codebook Memory Size         | {:.3f} KB\n"
+              "Compressed Param Memory Size | {:.3f} KB\n"
+              "Index Memory Size            | {:.3f} KB\n"
+              "Overall Param Memory Size    | {:.3f} KB"
               .format(self.stats['compression_ratio']['compressed'].avg,
                       self.stats['compression_ratio']['total'].avg,
                       self.stats['memory_size']['codebook'].sum,
-                      self.stats['memory_size']['compressed_param'].sum,
-                      self.stats['memory_size']['index'].sum,
-                      self.stats['memory_size']['param'].sum))
+                      self.stats['memory_size']['compressed_param'].sum / 8 / 1024,
+                      self.stats['memory_size']['index'].sum / 8 / 1024,
+                      self.stats['memory_size']['param'].sum / 8 / 1024))
         print("=" * 89)
         return EncodedModule(module=model, encoded_param=encoded_params)
 
@@ -160,11 +160,12 @@ class Codec(object):
             if 'AuxLogits' in param_name:
                 # deal with googlenet
                 state_dict[param_name] = param.data
-            elif param_name in state_dict:
+            elif param_name in state_dict and isinstance(state_dict[param_name], dict):
                 print("Decoding {}".format(param_name))
-                encoded_param = EncodedParam().load_state_dict(state_dict[param_name])
+                encoded_param = EncodedParam()
+                encoded_param.load_state_dict(state_dict[param_name])
                 state_dict[param_name] = encoded_param.data
-        model = model.load_state_dict(state_dict)
+        model.load_state_dict(state_dict)
         print("Stop Decoding")
         print("=" * 89)
         return model
