@@ -137,7 +137,7 @@ class Codec(object):
               "Overall Param Memory Size    | {:.3f} KB"
               .format(self.stats['compression_ratio']['compressed'].avg,
                       self.stats['compression_ratio']['total'].avg,
-                      self.stats['memory_size']['codebook'].sum,
+                      self.stats['memory_size']['codebook'].sum / 8 / 1024,
                       self.stats['memory_size']['compressed_param'].sum / 8 / 1024,
                       self.stats['memory_size']['index'].sum / 8 / 1024,
                       self.stats['memory_size']['param'].sum / 8 / 1024))
