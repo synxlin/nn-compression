@@ -1,0 +1,8 @@
+module\.conv1\.weight 0.4,0.4,0.5
+module\.layer[1-3]\.0\.conv1\.weight 0.5,0.5,0.6
+module\.layer1\.0\.downsample\.0\.weight 0.5,0.5,0.6
+module\.layer2\.0\.conv2\.weight 0.5,0.6,0.667
+module\.layer4\.[0-9a-z\.]+ 0.5,0.667,0.7
+module\.layer[0-5\.]+conv[1-3]\.weight 0.5,0.7
+module\.layer[0-4\.]+downsample\.0\.weight 0.5,0.7
+module\.fc.weight 0.5,0.75,0.8

@@ -1,0 +1,2 @@
+(layer[0-5\.]+)*(conv[1-3]|downsample\.0)\.weight huffman 0 0 4
+fc\.weight huffman 0 0 4
