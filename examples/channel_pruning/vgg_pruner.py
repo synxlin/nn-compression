@@ -2,15 +2,16 @@ import re
 import torch
 from torchvision.models import VGG
 
-from modules.prune import prune_thinet
+from modules.prune import prune_channel
 
 
 class VGGPruner(object):
 
     def __init__(self, rule):
         """
-
-        :param rule:
+        Channel Pruner for VGG
+        :param rule: str, path to the rule file, each line formats 'module_name sparsity'
+                     list of tuple, [(module_name(str), sparsity(float))]
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
@@ -22,10 +23,10 @@ class VGGPruner(object):
 
     def get_param_sparsity(self, module_name):
         """
-
-        :param module_name:
-        :param stage:
+        get sparsity based on the name of module
+        :param module_name: str, name of the module to prune
         :return:
+            float, sparsity
         """
         rule_id = -1
         for idx, x in enumerate(self.rule):
@@ -42,9 +43,10 @@ class VGGPruner(object):
     @staticmethod
     def get_prune_inputs(model):
         """
-
-        :param model:
+        get input args for prune() method of VGGPruner Class
+        :param model: torch.nn.Module, model to prune
         :return:
+            list of tuple, [(module_name, module, next_module, fn_input_feature, fn_next_input_feature), ...]
         """
         assert isinstance(model, VGG)
         features = model.features
@@ -138,21 +140,26 @@ class VGGPruner(object):
                      input, method='greedy', cpu=True, verbose=False):
         """
 
-        :param module_name:
-        :param module:
-        :param next_module:
-        :param fn_input_feature:
-        :param fn_next_input_feature:
-        :param input:
-        :param method:
-        :param cpu:
+        :param module_name: str, the name of the module to prune
+        :param module: torch.nn.Module, usually _ConvNd or Linear
+        :param next_module: torch.nn.Module, the next _ConvNd or Linear module to "module"
+        :param fn_input_feature: function, calculate input feature of "module" from the image
+        :param fn_next_input_feature: function, calculate input feature of "next_module"
+                                                from the output feature of "module"
+        :param input: torch.tensor, input image of VGG, (batch_size, 3, 224, 224)
+        :param method: str
+                        'greedy': select one contributed to the smallest next feature after another
+                        'lasso': select pruned channels by lasso regression
+                        'random': randomly select
+        :param cpu: bool, whether done in cpu for larger reconstruction batch size
         :return:
+            void
         """
         sparsity = self.get_param_sparsity(module_name=module_name)
         if verbose:
             print("=" * 89)
             print("{param_name:^30} : {spars:.3f}".format(param_name=module_name, spars=sparsity))
         input_feature = fn_input_feature(input)
-        prune_thinet(sparsity=sparsity, module=module, next_module=next_module,
-                     fn_next_input_feature=fn_next_input_feature,
-                     input_feature=input_feature, method=method, cpu=cpu)
+        prune_channel(sparsity=sparsity, module=module, next_module=next_module,
+                      fn_next_input_feature=fn_next_input_feature,
+                      input_feature=input_feature, method=method, cpu=cpu)

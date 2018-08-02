@@ -22,7 +22,7 @@ model_names = sorted(name for name in models.__dict__
     and name.startswith("vgg")
     and callable(models.__dict__[name]))
 
-parser = argparse.ArgumentParser(description='PyTorch ThiNet Pruning')
+parser = argparse.ArgumentParser(description='PyTorch ThiNet/Channel Pruning')
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg16',
@@ -50,13 +50,20 @@ parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
+
+parser.add_argument('--pretrained', default='', type=str, metavar='PATH',
+                    help='use pre-trained model: '
+                         'pytorch: use pytorch official | '
+                         'path to self-trained moel')
+parser.add_argument('--pretrained-parallel', dest='pretrained_parallel',
+                    action='store_true',
+                    help='self-trained model starts with torch.nn.DataParallel')
+
 parser.add_argument('--pruning-rule', default='',
                     help='path to quantization rule file')
 parser.add_argument('--method', default='greedy', type=str, metavar='METHOD',
                     help='channel selection method in ThiNet Pruning:' +
-                         ' | '.join(['greedy', 'random']) +
+                         ' | '.join(['greedy', 'lasso', 'random']) +
                          ' (default: greedy)')
 parser.add_argument('--rb', '--reconstruction-batch-size', default=128,
                     type=int, metavar='N', dest='rcn_batch_size',
@@ -79,7 +86,6 @@ def main():
     os.makedirs(checkpoint_dir)
     train_log = Logger(os.path.join(log_dir, 'train.log'))
     test_log = Logger(os.path.join(log_dir, 'test.log'))
-    prune_log = Logger(os.path.join(log_dir, 'prune.log'))
     config_log = Logger(os.path.join(log_dir, 'config.log'))
 
     for k, v in vars(args).items():
@@ -96,7 +102,7 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
-            model = checkpoint['model']
+            model = checkpoint['model'].cuda()
             optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                         momentum=args.momentum,
                                         weight_decay=args.weight_decay)
@@ -106,11 +112,27 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
             return
+
     elif args.pretrained:
-        print("=> using pre-trained model from model zoo")
-        model = models.__dict__[args.arch](pretrained=True)
-        model.features = torch.nn.DataParallel(model.features)
-        model.cuda()
+        if args.pretrained == 'pytorch':
+            print("=> using pre-trained model from model zoo")
+            model = models.__dict__[args.arch](pretrained=True)
+            args.pretrained_parallel = False
+        else:
+            model = models.__dict__[args.arch]()
+            if args.pretrained_parallel:
+                model.features = torch.nn.DataParallel(model.features)
+                model.cuda()
+            if os.path.isfile(args.pretrained):
+                print("=> using pre-trained model '{}'".format(args.pretrained))
+                checkpoint = torch.load(args.pretrained)
+                model.load_state_dict(checkpoint['state_dict'])
+                if not args.pretrained_parallel:
+                    model.features = torch.nn.DataParallel(model.features)
+                    model.cuda()
+            else:
+                print("=> no checkpoint found at '{}'".format(args.pretrained))
+                return
     else:
         model = models.__dict__[args.arch]()
         model.features = torch.nn.DataParallel(model.features)

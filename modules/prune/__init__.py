@@ -1,2 +1,2 @@
 from .vanilla import *
-from .thinet import *
+from .channel import *
