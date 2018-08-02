@@ -48,8 +48,8 @@ class VGGPruner(object):
         """
         assert isinstance(model, VGG)
         features = model.features
-        assert isinstance(features, torch.nn.DataParallel)
-        features = features.module
+        if isinstance(features, torch.nn.DataParallel):
+            features = features.module
         classifier = model.classifier
 
         module_name_dict = dict()
@@ -113,6 +113,7 @@ class VGGPruner(object):
         def get_fn_fc_input_feature(idx):
             def fn(x):
                 x = features(x)
+                x = x.view(x.size(0), -1)
                 for seq_i in range(fc_indices[idx]):
                     x = classifier[seq_i](x)
                 return x

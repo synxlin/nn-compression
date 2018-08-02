@@ -109,6 +109,7 @@ def weight_reconstruction_thinet(next_module, next_input_feature, next_output_fe
                                  stride=next_module.stride)
         if not cpu:
             unfold = unfold.cuda()
+        unfold.eval()
         next_input_feature = unfold(next_input_feature)
         next_input_feature = next_input_feature.transpose(1, 2)
         num_fields = next_input_feature.size(0) * next_input_feature.size(1)
@@ -117,10 +118,11 @@ def weight_reconstruction_thinet(next_module, next_input_feature, next_output_fe
         next_output_feature = next_output_feature.transpose(1, 2).reshape(num_fields, -1)
     if cpu:
         next_output_feature = next_output_feature.cpu()
-    param, _ = torch.gels(next_output_feature, next_input_feature)
+    param, _ = torch.gels(next_output_feature.data, next_input_feature.data)
     param = param[0:next_input_feature.size(1), :].clone().t().contiguous().view(next_output_feature.size(1), -1)
     if isinstance(next_module, torch.nn.modules.conv._ConvNd):
         param = param.view(next_module.out_channels, next_module.in_channels, *next_module.kernel_size)
+    del next_module.weight
     next_module.weight = torch.nn.Parameter(param)
 
 
