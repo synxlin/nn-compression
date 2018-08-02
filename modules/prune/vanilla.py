@@ -89,7 +89,7 @@ class VanillaPruner(object):
         Pruner Class for Vanilla Pruning Method
         :param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
                      list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...])]
-        :param granularity: str, pruning granularity, choose from 'element', 'kernel', 'filter'
+        :param granularity: str, pruning granularity, choose from ['element', 'kernel', 'filter']
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
