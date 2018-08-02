@@ -4,7 +4,7 @@ from modules.prune.vanilla import prune_vanilla_elementwise
 from modules.quantize.linear import quantize_linear, quantize_linear_fix_zeros
 from modules.quantize.kmeans import quantize_k_means, quantize_k_means_fix_zeros
 from modules.quantize.fixed_point import quantize_fixed_point
-from modules.quantize.quantizer import Quantizer
+from modules.quantize.quantizer import VanillaQuantizer
 
 
 def test_quantize_linear():
@@ -93,7 +93,7 @@ def test_quantizer():
     mask_dict = {}
     for n, p in model.named_parameters():
         mask_dict[n] = prune_vanilla_elementwise(sparsity=0.4, param=p)
-    quantizer = Quantizer(rule=rule, fix_zeros=True)
+    quantizer = VanillaQuantizer(rule=rule, fix_zeros=True)
     quantizer.quantize(model, update_labels=False, verbose=True)
     for n, p in model.named_parameters():
         if n in rule_dict:

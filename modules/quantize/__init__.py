@@ -1,1 +1,1 @@
-from .quantizer import Quantizer
+from .quantizer import VanillaQuantizer

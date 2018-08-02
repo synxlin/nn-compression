@@ -1,13 +1,12 @@
 import re
 from sklearn.cluster import KMeans
-import torch
 
-from .fixed_point import quantize_fixed_point
-from .linear import quantize_linear, quantize_linear_fix_zeros
-from .kmeans import quantize_k_means, quantize_k_means_fix_zeros
+from modules.quantize.fixed_point import quantize_fixed_point
+from modules.quantize.linear import quantize_linear, quantize_linear_fix_zeros
+from modules.quantize.kmeans import quantize_k_means, quantize_k_means_fix_zeros
 
 
-def quantize(method='k-means', fix_zeros=True, **options):
+def vanilla_quantize(method='k-means', fix_zeros=True, **options):
     """
     returns quantization function based on the options
     :param fix_zeros: bool, whether to fix zeros in the param
@@ -40,7 +39,7 @@ def quantize(method='k-means', fix_zeros=True, **options):
         return quantize_fixed_point(**options)
 
 
-class Quantizer(object):
+class VanillaQuantizer(object):
 
     def __init__(self, rule=None, fix_zeros=True):
         """
@@ -63,7 +62,7 @@ class Quantizer(object):
 
         self.codebooks = dict()
         self.fix_zeros = fix_zeros
-        self.fn_quantize = quantize
+        self.fn_quantize = vanilla_quantize
 
         print("=" * 89)
         if self.rule is None:
