@@ -31,6 +31,9 @@ parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
                          ' (default: resnet50)')
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 4)')
+parser.add_argument('--nGPU', type=int, default=4,
+                    help='the number of gpus for training')
+
 parser.add_argument('--epochs', default=90, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
@@ -57,16 +60,22 @@ parser.add_argument('--eps', '--epsilon', default=1.0, type=float,
                     metavar='EPS', help='epsilon for RMSprop (default: 1.0)')
 parser.add_argument('--print-freq', '-p', default=10, type=int,
                     metavar='N', help='print frequency (default: 10)')
+
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
-parser.add_argument('--pretrained', dest='pretrained', default='',
-                    help='use pre-trained model (after nn.DataParallel)')
+parser.add_argument('--pretrained', default='', type=str, metavar='PATH',
+                    help='use pre-trained model: '
+                         'pytorch: use pytorch official | '
+                         'path to self-trained moel')
+parser.add_argument('--pretrained-parallel', dest='pretrained_parallel',
+                    action='store_true',
+                    help='self-trained model starts with torch.nn.DataParallel')
+
 parser.add_argument('--prune-rule', default='',
                     help='path to prune rule file')
 parser.add_argument('--prune-step', default='45', metavar='N1,N2,N3...',
                     help='after N1, N1+N2, ...  epochs update sparsities/masks')
-parser.add_argument('--nGPU', type=int, default=4,
-                    help='the number of gpus for training')
+
 
 best_prec1 = 0
 
@@ -92,14 +101,22 @@ def main():
     print("=" * 89)
     print("=> creating model '{}'".format(args.arch))
 
-    if args.pretrained == 'True':
+    if args.pretrained == 'pytorch':
         print("=> using pre-trained model from model zoo")
         model = models.__dict__[args.arch](pretrained=True)
+        args.pretrained_parallel = False
     else:
         if args.arch.startswith('inception'):
             model = models.__dict__[args.arch](transform_input=True)
         else:
             model = models.__dict__[args.arch]()
+        if args.pretrained and not args.pretrained_parallel:
+            if os.path.isfile(args.pretrained):
+                print("=> using pre-trained model '{}'".format(args.pretrained))
+                checkpoint = torch.load(args.pretrained)
+                model.load_state_dict(checkpoint['state_dict'])
+            else:
+                print("=> no checkpoint found at '{}'".format(args.pretrained))
 
     if args.arch.startswith('alexnet') or args.arch.startswith('vgg'):
         model.features = torch.nn.DataParallel(model.features, device_ids=list(range(args.nGPU)))
@@ -107,10 +124,14 @@ def main():
     else:
         model = torch.nn.DataParallel(model, device_ids=list(range(args.nGPU))).cuda()
 
-    if args.pretrained and args.pretrained != 'True':
-        print("=> using pre-trained model '{}'".format(args.pretrained))
-        checkpoint = torch.load(args.pretrained)
-        model.load_state_dict(checkpoint['state_dict'])
+    if args.pretrained and args.pretrained_parallel:
+        if os.path.isfile(args.pretrained):
+            print("=> loading checkpoint '{}'".format(args.pretrained))
+            checkpoint = torch.load(args.pretrained)
+            model.load_state_dict(checkpoint['state_dict'])
+            print("=> loaded checkpoint")
+        else:
+            print("=> no checkpoint found at '{}'".format(args.pretrained))
 
     # define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
@@ -133,19 +154,12 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
-            if 'best_prec1' in checkpoint:
-                best_prec1 = checkpoint['best_prec1']
-            load_optimizer = False
-            if 'optimizer' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer'])
-                load_optimizer = True
-                optimizer.zero_grad()
-            load_pruner = False
-            if 'pruner' in checkpoint:
-                pruner.load_state_dict(checkpoint['pruner'], keep_rule=True)
-                load_pruner = True
-            print("=> loaded checkpoint (epoch {:3d}, best_prec1 {:.3f}, load_optimizer {}, load_pruner {})"
-                  .format(args.start_epoch, best_prec1, load_optimizer, load_pruner))
+            best_prec1 = checkpoint['best_prec1']
+            optimizer.load_state_dict(checkpoint['optimizer'])
+            optimizer.zero_grad()
+            pruner.load_state_dict(checkpoint['pruner'], keep_rule=True)
+            print("=> loaded checkpoint (epoch {:3d}, best_prec1 {:.3f})"
+                  .format(args.start_epoch, best_prec1))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 

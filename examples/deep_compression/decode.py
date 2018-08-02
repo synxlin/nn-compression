@@ -18,7 +18,7 @@ parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet50',
                          ' | '.join(model_names) +
                          ' (default: resnet50)')
 parser.add_argument('--pretrained', dest='pretrained', default='',
-                    help='use pre-trained encoded model (before nn.DataParallel)')
+                    help='use pre-trained encoded model')
 
 
 def main():
@@ -37,15 +37,17 @@ def main():
         model = models.__dict__[args.arch]()
 
     if args.pretrained:
-        print("=> using pre-trained model '{}'".format(args.pretrained))
-        checkpoint = torch.load(args.pretrained)
+        if os.path.isfile(args.pretrained):
+            print("=> using pre-trained model '{}'".format(args.pretrained))
+            checkpoint = torch.load(args.pretrained)
 
-        model = Codec.decode(model=model, state_dict=checkpoint['state_dict'])
+            model = Codec.decode(model=model, state_dict=checkpoint['state_dict'])
 
-        torch.save({
-            'state_dict': model.state_dict(),
-        }, os.path.join(checkpoint_dir, 'decode.pth.tar'), pickle_protocol=4)
-
+            torch.save({
+                'state_dict': model.state_dict(),
+            }, os.path.join(checkpoint_dir, 'decode.pth.tar'), pickle_protocol=4)
+        else:
+            print("=> no checkpoint found at '{}'".format(args.pretrained))
     else:
         print("=> no checkpoint")
 
