@@ -44,7 +44,7 @@ class VGGPruner(object):
     def get_prune_inputs(model):
         """
         get input args for prune() method of VGGPruner Class
-        :param model: torch.nn.Module, model to prune
+        :param model: class VGG (torch.nn.Module), model to prune
         :return:
             list of tuple, [(module_name, module, next_module, fn_input_feature, fn_next_input_feature), ...]
         """

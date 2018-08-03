@@ -211,56 +211,41 @@ torch.save({'state_dict': model.state_dict()}, 'decode.pth.tar')
 
 ## Rerference
 
-> @article{han2015deep,
->
->   title={Deep compression: Compressing deep neural networks with pruning, trained quantization and huffman coding},
->
->   author={Han, Song and Mao, Huizi and Dally, William J},
->
->   journal={arXiv preprint arXiv:1510.00149},
->
->   year={2015}
->
-> }
+```text
+@article{han2015deep,
+  title={Deep compression: Compressing deep neural networks with pruning, trained quantization and huffman coding},
+  author={Han, Song and Mao, Huizi and Dally, William J},
+  journal={arXiv preprint arXiv:1510.00149},
+  year={2015}
+}
+```
 
-> @inproceedings{han2015learning,
->
->  title={Learning both weights and connections for efficient neural network},
->
->  author={Han, Song and Pool, Jeff and Tran, John and Dally, William},
->
->  booktitle={Advances in neural information processing systems},
->
->  pages={1135--1143},
->
->  year={2015}
->
-> }
+```text
+@inproceedings{han2015learning,
+  title={Learning both weights and connections for efficient neural network},
+  author={Han, Song and Pool, Jeff and Tran, John and Dally, William},
+  booktitle={Advances in neural information processing systems},
+  pages={1135--1143},
+  year={2015}
+}
+```
 
-> @article{luo2017thinet,
->
->  title={Thinet: A filter level pruning method for deep neural network compression},
->
->  author={Luo, Jian-Hao and Wu, Jianxin and Lin, Weiyao},
->
->  journal={arXiv preprint arXiv:1707.06342},
->
->  year={2017}
->
-> }
+```text
+@article{luo2017thinet,
+  title={Thinet: A filter level pruning method for deep neural network compression},
+  author={Luo, Jian-Hao and Wu, Jianxin and Lin, Weiyao},
+  journal={arXiv preprint arXiv:1707.06342},
+  year={2017}
+}
+```
 
-> @inproceedings{he2017channel,
->   title={Channel pruning for accelerating very deep neural networks},
->
->   author={He, Yihui and Zhang, Xiangyu and Sun, Jian},
->
->   booktitle={International Conference on Computer Vision (ICCV)},
->
->   volume={2},
->
->   number={6},
->
->   year={2017}
->
-> }
-
+```text
+@inproceedings{he2017channel,
+  title={Channel pruning for accelerating very deep neural networks},
+  author={He, Yihui and Zhang, Xiangyu and Sun, Jian},
+  booktitle={International Conference on Computer Vision (ICCV)},
+  volume={2},
+  number={6},
+  year={2017}
+}
+```

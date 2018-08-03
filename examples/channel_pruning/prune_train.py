@@ -102,7 +102,14 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             best_prec1 = checkpoint['best_prec1']
-            model = checkpoint['model'].cuda()
+
+            vgg_cfg, batch_norm = checkpoint['cfg']
+            from torchvision.models.vgg import VGG, make_layers
+            model = VGG(make_layers(cfg=vgg_cfg, batch_norm=batch_norm), init_weights=False)
+            model.features = torch.nn.DataParallel(model.features)
+            model.cuda()
+            model.load_state_dict(checkpoint['state_dict'])
+
             optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                         momentum=args.momentum,
                                         weight_decay=args.weight_decay)
@@ -208,9 +215,10 @@ def main():
         save_checkpoint({
             'epoch': epoch + 1,
             'arch': args.arch,
-            'model': model,
+            'state_dict': model.state_dict(),
+            'cfg': get_vgg_cfg(model),
             'best_prec1': best_prec1,
-            'optimizer' : optimizer.state_dict(),
+            'optimizer': optimizer.state_dict(),
         }, is_best=is_best, checkpoint_dir=checkpoint_dir)
 
 
@@ -359,6 +367,31 @@ def prune(train_loader, val_loader, rcn_loader, model, criterion):
                  criterion=criterion, epoch=0)
     print("=" * 89)
     print("stop ThiNet Pruning")
+
+
+def get_vgg_cfg(model):
+    """
+    return config list to generate VGG instance
+    :param model: class VGG (torch.nn.Module), model to prune
+    :return:
+        list, config list to generate VGG instance
+    """
+    assert isinstance(model, models.VGG)
+    features = model.features
+    if isinstance(features, torch.nn.DataParallel):
+        features = features.module
+
+    cfg = []
+    batch_norm = False
+    for m in features:
+        if isinstance(m, torch.nn.modules.conv._ConvNd):
+            cfg.append(m.out_channels)
+        elif isinstance(m, torch.nn.modules.pooling._MaxPoolNd):
+            cfg.append('M')
+        elif isinstance(m, torch.nn.modules.batchnorm._BatchNorm):
+            batch_norm = True
+
+    return cfg, batch_norm
 
 
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', checkpoint_dir='.'):
