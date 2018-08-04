@@ -1,11 +1,11 @@
 import torch
 
-from modules.prune.vanilla import prune_vanilla_elementwise
-from modules.quantize.linear import quantize_linear_fix_zeros
-from modules.quantize.fixed_point import quantize_fixed_point
-from modules.quantize.quantizer import VanillaQuantizer
-from modules.coding.encode import EncodedParam
-from modules.coding.codec import Codec
+from slender.prune.vanilla import prune_vanilla_elementwise
+from slender.quantize.linear import quantize_linear_fix_zeros
+from slender.quantize.fixed_point import quantize_fixed_point
+from slender.quantize.quantizer import Quantizer
+from slender.coding.encode import EncodedParam
+from slender.coding.codec import Codec
 
 
 def test_encode_param():
@@ -45,7 +45,7 @@ def test_codec():
     mask_dict = {}
     for n, p in model.named_parameters():
         mask_dict[n] = prune_vanilla_elementwise(sparsity=0.6, param=p.data)
-    quantizer = VanillaQuantizer(rule=quantize_rule, fix_zeros=True)
+    quantizer = Quantizer(rule=quantize_rule, fix_zeros=True)
     quantizer.quantize(model, update_labels=False, verbose=True)
     rule = [
         ('0.weight', 'huffman', 0, 0, 4),

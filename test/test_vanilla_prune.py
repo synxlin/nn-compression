@@ -1,7 +1,7 @@
 import math
 import torch
 
-from modules.prune.vanilla import prune_vanilla_elementwise, prune_vanilla_kernelwise, \
+from slender.prune.vanilla import prune_vanilla_elementwise, prune_vanilla_kernelwise, \
     prune_vanilla_filterwise, VanillaPruner
 
 

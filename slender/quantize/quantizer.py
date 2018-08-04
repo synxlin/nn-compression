@@ -1,9 +1,9 @@
 import re
 from sklearn.cluster import KMeans
 
-from modules.quantize.fixed_point import quantize_fixed_point
-from modules.quantize.linear import quantize_linear, quantize_linear_fix_zeros
-from modules.quantize.kmeans import quantize_k_means, quantize_k_means_fix_zeros
+from slender.quantize.fixed_point import quantize_fixed_point
+from slender.quantize.linear import quantize_linear, quantize_linear_fix_zeros
+from slender.quantize.kmeans import quantize_k_means, quantize_k_means_fix_zeros
 
 
 def vanilla_quantize(method='k-means', fix_zeros=True, **options):
@@ -39,7 +39,7 @@ def vanilla_quantize(method='k-means', fix_zeros=True, **options):
         return quantize_fixed_point(**options)
 
 
-class VanillaQuantizer(object):
+class Quantizer(object):
 
     def __init__(self, rule=None, fix_zeros=True):
         """

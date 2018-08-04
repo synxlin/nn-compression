@@ -5,7 +5,7 @@ import datetime
 import torch
 import torchvision.models as models
 
-from modules.coding import Codec
+from slender.coding import Codec
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")

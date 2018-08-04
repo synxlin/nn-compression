@@ -2,7 +2,7 @@ import re
 import torch
 from torchvision.models import VGG
 
-from modules.prune import prune_channel
+from slender.prune import prune_channel
 
 
 class VGGPruner(object):

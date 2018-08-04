@@ -1,17 +1,11 @@
 # nn-compression
 A Pytorch implementation of Neural Network Compression (pruning, quantization, encoding/decoding)
 
+Most work of this repo is better done in [distiller](https://github.com/NervanaSystems/distiller). However, they have not implement channel pruning and coding yet. With coding in this repo, you can save the model with actually much smaller memory size.
+
 ## Pruning
 
 Neural Network Pruning reduces the number of nonzero parameters and thus computation amount (FLOPs).
-
-TODO:
-
-- [x] Vanilla Pruning
-
-- [x] Channel Pruning
-
-- [ ] Factorization
 
 ### Vanilla Pruning
 
@@ -100,12 +94,6 @@ Detailed example shows in [here](examples/channel_pruning).
 ## Quantization
 
 Neural Network Quantization is to represent the parameters with fewer bits.
-
-TODO:
-
-- [x] Vanilla Quantization (Fixed-point, Linear, K-Means Quantize Parameters)
-
-- [ ] Adaptive Quantization (Quantize Activation and Estimate Quantization Bit Length)
 
 ### Vanilla Quantization
 

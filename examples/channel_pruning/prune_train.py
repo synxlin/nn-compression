@@ -14,7 +14,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torchvision.models as models
 
-from modules.utils import AverageMeter, Logger
+from slender.utils import AverageMeter, Logger
 from .vgg_pruner import VGGPruner
 
 model_names = sorted(name for name in models.__dict__

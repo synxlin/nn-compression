@@ -3,11 +3,14 @@ import math
 import torch
 
 
-def prune_vanilla_elementwise(sparsity, param):
+def prune_vanilla_elementwise(param, sparsity, fn_importance=lambda x: x.abs()):
     """
     element-wise vanilla pruning
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
+    :param fn_importance: function, inputs "param" and returns the importance of
+                                    each position in "param",
+                                    default=lambda x: x.abs()
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
     """
@@ -15,28 +18,31 @@ def prune_vanilla_elementwise(sparsity, param):
     if sparsity == 1.0:
         return torch.zeros_like(param).byte()
     num_el = param.numel()
-    param_abs = param.abs()
+    importance = fn_importance(param)
     num_pruned = int(math.ceil(num_el * sparsity))
     num_stayed = num_el - num_pruned
     if sparsity <= 0.5:
-        _, topk_indices = torch.topk(param_abs.view(num_el), k=num_pruned,
+        _, topk_indices = torch.topk(importance.view(num_el), k=num_pruned,
                                      dim=0, largest=False, sorted=False)
         mask = torch.zeros_like(param).byte()
         param.view(num_el).index_fill_(0, topk_indices, 0)
         mask.view(num_el).index_fill_(0, topk_indices, 1)
     else:
-        thr = torch.min(torch.topk(param_abs.view(num_el), k=num_stayed,
+        thr = torch.min(torch.topk(importance.view(num_el), k=num_stayed,
                                    dim=0, largest=True, sorted=False)[0])
-        mask = torch.lt(param_abs, thr)
+        mask = torch.lt(importance, thr)
         param.masked_fill_(mask, 0)
     return mask
 
 
-def prune_vanilla_kernelwise(sparsity, param):
+def prune_vanilla_kernelwise(param, sparsity, fn_importance=lambda x: x.norm(1, -1)):
     """
     kernel-wise vanilla pruning, the importance determined by L1 norm
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
+    :param fn_importance: function, inputs "param" as size (param.size(0) * param.size(1), -1) and
+                                    returns the importance of each kernel in "param",
+                                    default=lambda x: x.norm(1, -1)
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
     """
@@ -46,9 +52,9 @@ def prune_vanilla_kernelwise(sparsity, param):
         return torch.zeros_like(param).byte()
     num_kernels = param.size(0) * param.size(1)
     param_k = param.view(num_kernels, -1)
-    param_norm = param_k.norm(1, -1)  # L1-norm importance
+    param_importance = fn_importance(param_k)
     num_pruned = int(math.ceil(num_kernels * sparsity))
-    _, topk_indices = torch.topk(param_norm, k=num_pruned,
+    _, topk_indices = torch.topk(param_importance, k=num_pruned,
                                  dim=0, largest=False, sorted=False)
     mask = torch.zeros_like(param).byte()
     mask_k = mask.view(num_kernels, -1)
@@ -57,11 +63,14 @@ def prune_vanilla_kernelwise(sparsity, param):
     return mask
 
 
-def prune_vanilla_filterwise(sparsity, param):
+def prune_vanilla_filterwise(sparsity, param, fn_importance=lambda x: x.norm(1, -1)):
     """
     filter-wise vanilla pruning, the importance determined by L1 norm
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
+    :param fn_importance: function, inputs "param" as size (param.size(0), -1) and
+                                returns the importance of each filter in "param",
+                                default=lambda x: x.norm(1, -1)
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
     """
@@ -71,9 +80,9 @@ def prune_vanilla_filterwise(sparsity, param):
         return torch.zeros_like(param).byte()
     num_filters = param.size(0)
     param_k = param.view(num_filters, -1)
-    param_norm = param_k.norm(1, -1)  # L1-norm importance
+    param_importance = fn_importance(param_k)
     num_pruned = int(math.ceil(num_filters * sparsity))
-    _, topk_indices = torch.topk(param_norm, k=num_pruned,
+    _, topk_indices = torch.topk(param_importance, k=num_pruned,
                                  dim=0, largest=False, sorted=False)
     mask = torch.zeros_like(param).byte()
     mask_k = mask.view(num_filters, -1)
@@ -88,13 +97,13 @@ class VanillaPruner(object):
         """
         Pruner Class for Vanilla Pruning Method
         :param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
-                     list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...])]
+                     list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...], fn_importance)]
         :param granularity: str, pruning granularity, choose from ['element', 'kernel', 'filter']
         """
         if isinstance(rule, str):
             content = map(lambda x: x.split(), open(rule).readlines())
             content = filter(lambda x: len(x) == 2, content)
-            rule = list(map(lambda x: (x[0], list(map(float, x[1].split(',')))), content))
+            rule = list(map(lambda x: (x[0], list(map(float, x[1].split(','))), None), content))
         assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
         self.rule = rule
         self.max_num_stage = 0 if rule is None else max(map(lambda x: len(x[1]), rule))
@@ -168,8 +177,8 @@ class VanillaPruner(object):
             torch.(cuda.)ByteTensor, mask for zeros
         """
         rule_id = -1
-        for idx, x in enumerate(self.rule):
-            m = re.match(x[0], param_name)
+        for idx, r in enumerate(self.rule):
+            m = re.match(r[0], param_name)
             if m is not None and len(param_name) == m.span()[1]:
                 rule_id = idx
                 break
@@ -177,10 +186,14 @@ class VanillaPruner(object):
             max_num_stage = len(self.rule[rule_id][1]) - 1
             stage = min(max(0, stage), max_num_stage)
             sparsity = self.rule[rule_id][1][stage]
+            fn_importance = self.rule[rule_id][2]
             if verbose:
                 print("{param_name:^30} | {stage:5d} | {spars:.3f}".
                       format(param_name=param_name, stage=stage, spars=sparsity))
-            mask = self.fn_prune(sparsity=sparsity, param=param)
+            if fn_importance is not None:
+                mask = self.fn_prune(param=param, sparsity=sparsity, fn_importance=fn_importance)
+            else:
+                mask = self.fn_prune(param=param, sparsity=sparsity)
             return mask
         else:
             if verbose:

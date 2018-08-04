@@ -11,8 +11,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 
-from modules.prune import prune_vanilla_elementwise
-from modules.utils import get_sparsity, AverageMeter, Logger
+from slender.prune import prune_vanilla_elementwise
+from slender.utils import get_sparsity, AverageMeter, Logger
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")

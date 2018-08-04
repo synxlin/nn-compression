@@ -14,8 +14,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 
-from modules.prune import VanillaPruner
-from modules.utils import AverageMeter, Logger, StageScheduler
+from slender.prune import VanillaPruner
+from slender.utils import AverageMeter, Logger, StageScheduler
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")

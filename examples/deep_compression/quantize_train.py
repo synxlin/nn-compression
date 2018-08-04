@@ -14,8 +14,8 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 
-from modules.quantize import VanillaQuantizer
-from modules.utils import AverageMeter, Logger
+from slender.quantize import Quantizer
+from slender.utils import AverageMeter, Logger
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -149,7 +149,7 @@ def main():
                                     weight_decay=args.weight_decay)
 
     # quantize
-    quantizer = VanillaQuantizer(rule=args.quantize_rule, fix_zeros=(not args.not_fix_zeros))
+    quantizer = Quantizer(rule=args.quantize_rule, fix_zeros=(not args.not_fix_zeros))
 
     # optionally resume from a checkpoint
     if args.resume:
