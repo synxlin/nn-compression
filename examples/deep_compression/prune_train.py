@@ -15,7 +15,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 
 from slender.prune import VanillaPruner
-from slender.utils import AverageMeter, Logger, StageScheduler
+from slender.utils import AverageMeter, Logger
 
 model_names = sorted(name for name in models.__dict__
                      if name.islower() and not name.startswith("__")
@@ -34,7 +34,7 @@ parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
 parser.add_argument('--nGPU', type=int, default=4,
                     help='the number of gpus for training')
 
-parser.add_argument('--epochs', default=90, type=int, metavar='N',
+parser.add_argument('--epochs', default=45, type=int, metavar='N',
                     help='number of total epochs to run')
 parser.add_argument('--start-epoch', default=0, type=int, metavar='N',
                     help='manual epoch number (useful on restarts)')
@@ -44,11 +44,10 @@ parser.add_argument('--lr', '--learning-rate', default=0.001, type=float,
                     metavar='LR',
                     help='initial learning rate (default: 0.001 |'
                          ' for inception recommend 0.0256)')
-parser.add_argument('--lr-decay-step', default='15', metavar='N1,N2,N3...',
-                    help='every N1,N2,... epochs learning rate decays '
-                         'in stage 0,1,... (default:15)')
+parser.add_argument('--lr-decay-step', default=15, type=int, metavar='N',
+                    help='every N epochs learning rate decays (default:15)')
 parser.add_argument('--lr-decay', default=0.1, type=float, metavar='LD',
-                    help='every N1,N2,... epochs learning rate decays '
+                    help='every lr-decay-step epochs learning rate decays '
                          'by LD (default:0.1 | for inception recommend 0.16)')
 parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
                     help='momentum (default: 0.9)')
@@ -73,8 +72,8 @@ parser.add_argument('--pretrained-parallel', dest='pretrained_parallel',
 
 parser.add_argument('--prune-rule', default='',
                     help='path to prune rule file')
-parser.add_argument('--prune-step', default='45', metavar='N1,N2,N3...',
-                    help='after N1, N1+N2, ...  epochs update sparsities/masks')
+parser.add_argument('--prune-stage', default=0, type=int, metavar='N',
+                    help='pruning stage')
 
 
 best_prec1 = 0
@@ -157,20 +156,12 @@ def main():
             best_prec1 = checkpoint['best_prec1']
             optimizer.load_state_dict(checkpoint['optimizer'])
             optimizer.zero_grad()
-            pruner.load_state_dict(checkpoint['pruner'], keep_rule=True)
+            pruner.load_state_dict(checkpoint['pruner'], replace_rule=False)
             print("=> loaded checkpoint (epoch {:3d}, best_prec1 {:.3f})"
                   .format(args.start_epoch, best_prec1))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-    prune_scheduler = StageScheduler(max_num_stage=pruner.max_num_stage, stage_step=args.prune_step)
-    args.prune_step = prune_scheduler.stage_step
-    args.lr_decay_step = list(map(int, args.lr_decay_step.split(',')))
-    if len(args.lr_decay_step) == 1:
-        lr_decay_step = args.lr_decay_step[0]
-        args.lr_decay_step = [lr_decay_step] * prune_scheduler.max_num_stage
-    assert prune_scheduler.max_num_stage == len(args.lr_decay_step)
-    print('learning rate decay step: ', args.lr_decay_step)
     print("=" * 89)
 
     cudnn.benchmark = True
@@ -207,14 +198,11 @@ def main():
         num_workers=args.workers, pin_memory=True)
 
     for epoch in range(args.start_epoch, args.epochs):
-        # pruning
-        stage_id, epoch_id = prune_scheduler.step(epoch=epoch)
-        update_masks = epoch_id == 0
-        pruner.prune(model=model, stage=stage_id, update_masks=update_masks)
-
-        adjust_learning_rate(optimizer, stage=stage_id, epoch=epoch_id)
-        if epoch_id == 0:
+        if epoch == 0:
+            pruner.prune(model=model, stage=args.prune_stage, update_masks=True)
             best_prec1 = validate(val_loader, model, criterion, epoch)
+
+        adjust_learning_rate(optimizer, epoch=epoch)
 
         # train for one epoch
         train(train_loader=train_loader, model=model, criterion=criterion, optimizer=optimizer,
@@ -287,7 +275,7 @@ def train(train_loader, model, criterion, optimizer, pruner, epoch):
         optimizer.step()
 
         # pruning
-        pruner.prune(model=model, update_masks=False)
+        pruner.prune(model=model, stage=args.prune_stage, update_masks=False)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -369,7 +357,7 @@ def save_checkpoint(state, is_best, filename='checkpoint.pth.tar', checkpoint_di
         shutil.copyfile(filename, os.path.join(checkpoint_dir, 'model_best.pth.tar'))
 
 
-def adjust_learning_rate(optimizer, stage=0, epoch=0):
+def adjust_learning_rate(optimizer, epoch=0):
     """
     Sets the learning rate to the initial LR decayed by args.lr_decay every lr_decay_step epochs
     :param optimizer:
@@ -377,11 +365,11 @@ def adjust_learning_rate(optimizer, stage=0, epoch=0):
     :param stage:
     :return:
     """
-    decay = epoch // args.lr_decay_step[stage]
+    decay = epoch // args.lr_decay_step
     lr = args.lr * (args.lr_decay ** decay)
     print("Stage: {stage:2d}  Epoch: {epoch:3d} | "
           "learning rate = {lr:.6f} = origin x ({lr_decay:.2f} ** {decay:2d})"
-          .format(stage=stage, epoch=epoch, lr=lr, lr_decay=args.lr_decay, decay=decay))
+          .format(stage=args.prune_stage, epoch=epoch, lr=lr, lr_decay=args.lr_decay, decay=decay))
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr

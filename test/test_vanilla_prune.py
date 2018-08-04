@@ -33,8 +33,8 @@ def test_prune_vanilla_filterwise():
 
 def test_vanilla_pruner():
     rule = [
-        ('0.weight', [0.3, 0.5]),
-        ('1.weight', [0.4, 0.6])
+        ('0.weight', 'element', [0.3, 0.5]),
+        ('1.weight', 'element', [0.4, 0.6])
     ]
     rule_dict = {
         '0.weight': [0.3, 0.5],

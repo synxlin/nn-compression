@@ -51,13 +51,13 @@ class Quantizer(object):
                           initial_guess(str)_or_bit_length_of_integer(int))]
         :param fix_zeros: whether to fix zeros when quantizing
         """
-        if isinstance(rule, str):
-            content = map(lambda x: x.split(), open(rule).readlines())
-            content = filter(lambda x: len(x) == 4, content)
-            rule = list(map(lambda x: (x[0], x[1], int(x[2]),
-                                       int(x[3]) if x[1] == 'fixed_point' else x[3]),
-                            content))
-        assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
+        if rule:
+            if isinstance(rule, str):
+                content = map(lambda x: x.split(), open(rule).readlines())
+                content = filter(lambda x: len(x) == 4, content)
+                rule = list(map(lambda x: (x[0], x[1], int(x[2]),
+                                           int(x[3]) if x[1] == 'fixed_point' else x[3]),
+                                content))
         self.rule = rule
 
         self.codebooks = dict()
@@ -65,12 +65,12 @@ class Quantizer(object):
         self.fn_quantize = vanilla_quantize
 
         print("=" * 89)
-        if self.rule is None:
-            print("Initializing Quantizer WITHOUT rules")
-        else:
+        if self.rule:
             print("Initializing Quantizer with rules:")
             for r in self.rule:
                 print(r)
+        else:
+            print("Initializing Quantizer WITHOUT rules")
         print("=" * 89)
 
     def load_state_dict(self, state_dict):

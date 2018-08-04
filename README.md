@@ -13,35 +13,38 @@ Deep Compression uses vanilla pruning method. It prunes the parameters with the 
 
 * **_Elementwise_** Pruning: prune those with the smallest magnitude
 
-* **_Kernelwise_** Pruning: prune 2D kernels with the smallest L2 norm
+* **_Kernelwise_** Pruning: prune 2D kernels with the smallest L1(default)/L2 norm
 
-* **_Filterwise_** Pruning: prune 3D filters with the smallest L2 norm
+* **_Filterwise_** Pruning: prune 3D filters with the smallest L1(default)/L2 norm
 
 ```python
 # vanilla pruner usage
 
 from modules.prune import VanillaPruner
-from modules.utils import StageScheduler
 
 rule = [
-        ('0.weight', [0.3, 0.5]),
-        ('1.weight', [0.4, 0.6])
+        ('0.weight', 'element', [0.3, 0.5], 'abs'),
+        ('1.weight', 'kernel', [0.4, 0.6], 'default')
+        ('2.weight', 'filter', [0.5, 0.7], 'l2norm')
     ]
 
-pruner = VanillaPruner(rule=rule, granularity='element')
+pruner = VanillaPruner(rule=rule)
 """
-:param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
-             list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...])]
-:param granularity: str, pruning granularity, choose from ['element', 'kernel', 'filter']
+:param rule: str, path to the rule file, each line formats
+                  'param_name granularity sparsity_stage_0, sparstiy_stage_1, ...'
+             list of tuple, [(param_name(str), granularity(str),
+                              sparsity(float) or [sparsity_stage_0(float), sparstiy_stage_1,],
+                              fn_importance(optional, str or function))]
+             'granularity': str, choose from ['element', 'kernel', 'filter']
+             'fn_importance': str, choose from ['abs', 'l1norm', 'l2norm', 'default']
 """
 
-prune_scheduler = StageScheduler(max_num_stage=pruner.max_num_stage, stage_step=45)
+stage = 0
 
 for epoch in range(0, 90):
-    # in the train loop
-    stage_id, epoch_id = prune_scheduler.step(epoch=epoch)  # epoch_id: the epoch index in the 'stage_id'-th stage
-    update_masks = epoch_id == 0
-    pruner.prune(model=model, stage=stage_id, update_masks=update_masks)
+    if epoch == 0:
+        pruner.prune(model=model, stage=stage, update_masks=True)
+        best_prec1 = validate(val_loader, model, criterion, epoch)
     
     # in train function
     for i, (input, target) in enumerate(train_loader):
@@ -51,7 +54,7 @@ for epoch in range(0, 90):
         loss.backward()
         optimizer.step()
         
-        pruner.prune(model=model, update_masks=False)
+        pruner.prune(model=model, stage=stage, update_masks=False)
 ```
 
 ### Channel Pruning
@@ -110,14 +113,14 @@ i.e., the quantization step equals $(max - min) / k$, where *k* is the quantizat
 ```python
 # vanilla quantizer usage
 
-from modules.quantize import VanillaQuantizer
+from modules.quantize import Quantizer
 
 rule = [
         ('0.weight', 'k-means', 4, 'k-means++'),
         ('1.weight', 'fixed_point', 6, 1),
     ]
 
-quantizer = VanillaQuantizer(rule=rule, fix_zeros=True)
+quantizer = Quantizer(rule=rule, fix_zeros=True)
 """
 :param rule: str, path to the rule file, each line formats
                 'param_name method bit_length initial_guess_or_bit_length_of_integer'

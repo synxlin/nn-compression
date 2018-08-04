@@ -1,6 +1,7 @@
 import re
 import math
 import torch
+from collections import Iterable
 
 
 def prune_vanilla_elementwise(param, sparsity, fn_importance=lambda x: x.abs()):
@@ -8,8 +9,8 @@ def prune_vanilla_elementwise(param, sparsity, fn_importance=lambda x: x.abs()):
     element-wise vanilla pruning
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
-    :param fn_importance: function, inputs "param" and returns the importance of
-                                    each position in "param",
+    :param fn_importance: function, inputs 'param' and returns the importance of
+                                    each position in 'param',
                                     default=lambda x: x.abs()
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
@@ -40,8 +41,8 @@ def prune_vanilla_kernelwise(param, sparsity, fn_importance=lambda x: x.norm(1, 
     kernel-wise vanilla pruning, the importance determined by L1 norm
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
-    :param fn_importance: function, inputs "param" as size (param.size(0) * param.size(1), -1) and
-                                    returns the importance of each kernel in "param",
+    :param fn_importance: function, inputs 'param' as size (param.size(0) * param.size(1), -1) and
+                                    returns the importance of each kernel in 'param',
                                     default=lambda x: x.norm(1, -1)
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
@@ -68,8 +69,8 @@ def prune_vanilla_filterwise(sparsity, param, fn_importance=lambda x: x.norm(1, 
     filter-wise vanilla pruning, the importance determined by L1 norm
     :param param: torch.(cuda.)Tensor, weight of conv/fc layer
     :param sparsity: float, pruning sparsity
-    :param fn_importance: function, inputs "param" as size (param.size(0), -1) and
-                                returns the importance of each filter in "param",
+    :param fn_importance: function, inputs 'param' as size (param.size(0), -1) and
+                                returns the importance of each filter in 'param',
                                 default=lambda x: x.norm(1, -1)
     :return:
         torch.(cuda.)ByteTensor, mask for zeros
@@ -93,66 +94,75 @@ def prune_vanilla_filterwise(sparsity, param, fn_importance=lambda x: x.norm(1, 
 
 class VanillaPruner(object):
 
-    def __init__(self, rule=None, granularity='element'):
+    def __init__(self, rule=None):
         """
         Pruner Class for Vanilla Pruning Method
-        :param rule: str, path to the rule file, each line formats 'param_name sparsity_stage_0, sparstiy_stage_1, ...'
-                     list of tuple, [(param_name(str), [sparsity_stage_0, sparsity_stage_1, ...], fn_importance)]
-        :param granularity: str, pruning granularity, choose from ['element', 'kernel', 'filter']
+        :param rule: str, path to the rule file, each line formats
+                          'param_name granularity sparsity_stage_0, sparstiy_stage_1, ...'
+                     list of tuple, [(param_name(str), granularity(str),
+                                      sparsity(float) or [sparsity_stage_0(float), sparstiy_stage_1,],
+                                      fn_importance(optional, str or function))]
+                     'granularity': str, choose from ['element', 'kernel', 'filter']
+                     'fn_importance': str, choose from ['abs', 'l1norm', 'l2norm']
         """
-        if isinstance(rule, str):
-            content = map(lambda x: x.split(), open(rule).readlines())
-            content = filter(lambda x: len(x) == 2, content)
-            rule = list(map(lambda x: (x[0], list(map(float, x[1].split(','))), None), content))
-        assert isinstance(rule, list) or isinstance(rule, tuple) or rule is None
-        self.rule = rule
-        self.max_num_stage = 0 if rule is None else max(map(lambda x: len(x[1]), rule))
+        if rule:
+            if isinstance(rule, str):
+                content = map(lambda x: x.split(), open(rule).readlines())
+                content = filter(lambda x: len(x) == 3, content)
+                rule = list(map(lambda x: (x[0], x[1], list(map(float, x[2].split(',')))), content))
+            for r in rule:
+                if not isinstance(r[2], Iterable):
+                    assert isinstance(r[2], float) or isinstance(r[2], int)
+                    r[2] = [float(r[2])]
+                if len(r) == 3:
+                    r.append('default')
+                granularity = r[1]
+                if granularity == 'element':
+                    r.append(prune_vanilla_elementwise)
+                elif granularity == 'kernel':
+                    r.append(prune_vanilla_kernelwise)
+                elif granularity == 'filter':
+                    r.append(prune_vanilla_filterwise)
+                else:
+                    raise NotImplementedError
 
-        if granularity == 'element':
-            self.fn_prune = prune_vanilla_elementwise
-        elif granularity == 'kernel':
-            self.fn_prune = prune_vanilla_kernelwise
-        elif granularity == 'filter':
-            self.fn_prune = prune_vanilla_filterwise
-        else:
-            raise NotImplementedError
-        self.granularity = granularity
+        self.rule = rule
 
         self.masks = dict()
 
         print("=" * 89)
-        if self.rule is None:
-            print("Initializing Vanilla Pruner WITHOUT rules")
-        else:
+        if self.rule:
             print("Initializing Vanilla Pruner with rules:")
             for r in self.rule:
-                print(r)
+                print(r[:-1])
+        else:
+            print("Initializing Vanilla Pruner WITHOUT rules")
         print("=" * 89)
 
-    def load_state_dict(self, state_dict, keep_rule=False):
+    def load_state_dict(self, state_dict, replace_rule=True):
         """
         Recover Pruner
         :param state_dict: dict, a dictionary containing a whole state of the Pruner
-        :param keep_rule: bool, whether to keep rule and granularity settings
+        :param replace_rule: bool, whether to use rule settings in 'state_dict'
         :return: VanillaPruner
         """
-        if not keep_rule:
+        if replace_rule:
             self.rule = state_dict['rule']
-            self.max_num_stage = max(map(lambda x: len(x[1]), self.rule))
-            self.granularity = granularity = state_dict['granularity']
-            if granularity == 'element':
-                self.fn_prune = prune_vanilla_elementwise
-            elif granularity == 'kernel':
-                self.fn_prune = prune_vanilla_kernelwise
-            elif granularity == 'filter':
-                self.fn_prune = prune_vanilla_filterwise
-            else:
-                raise NotImplementedError
+            for r in self.rule:
+                granularity = r[1]
+                if granularity == 'element':
+                    r.append(prune_vanilla_elementwise)
+                elif granularity == 'kernel':
+                    r.append(prune_vanilla_kernelwise)
+                elif granularity == 'filter':
+                    r.append(prune_vanilla_filterwise)
+                else:
+                    raise NotImplementedError
         self.masks = state_dict['masks']
         print("=" * 89)
         print("Customizing Vanilla Pruner with rules:")
         for r in self.rule:
-            print(r)
+            print(r[:-1])
         print("=" * 89)
 
     def state_dict(self):
@@ -161,8 +171,7 @@ class VanillaPruner(object):
         :return: dict, a dictionary containing a whole state of the Pruner
         """
         state_dict = dict()
-        state_dict['rule'] = self.rule
-        state_dict['granularity'] = self.granularity
+        state_dict['rule'] = [r[:-1] for r in self.rule]
         state_dict['masks'] = self.masks
         return state_dict
 
@@ -183,17 +192,22 @@ class VanillaPruner(object):
                 rule_id = idx
                 break
         if rule_id > -1:
-            max_num_stage = len(self.rule[rule_id][1]) - 1
-            stage = min(max(0, stage), max_num_stage)
-            sparsity = self.rule[rule_id][1][stage]
-            fn_importance = self.rule[rule_id][2]
+            sparsity = self.rule[rule_id][2][stage]
+            fn_prune = self.rule[rule_id][-1]
+            fn_importance = self.rule[rule_id][3]
             if verbose:
                 print("{param_name:^30} | {stage:5d} | {spars:.3f}".
                       format(param_name=param_name, stage=stage, spars=sparsity))
-            if fn_importance is not None:
-                mask = self.fn_prune(param=param, sparsity=sparsity, fn_importance=fn_importance)
+            if fn_importance is None or fn_importance == 'default':
+                mask = fn_prune(param=param, sparsity=sparsity)
+            elif fn_importance == 'abs':
+                mask = fn_prune(param=param, sparsity=sparsity, fn_importance=lambda x: x.abs())
+            elif fn_importance == 'l1norm':
+                mask = fn_prune(param=param, sparsity=sparsity, fn_importance=lambda x: x.norm(1, -1))
+            elif fn_importance == 'l2norm':
+                mask = fn_prune(param=param, sparsity=sparsity, fn_importance=lambda x: x.norm(2, -1))
             else:
-                mask = self.fn_prune(param=param, sparsity=sparsity)
+                mask = fn_prune(param=param, sparsity=sparsity, fn_importance=fn_importance)
             return mask
         else:
             if verbose:
